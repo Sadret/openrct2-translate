@@ -1,0 +1,9 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"name": "gh-oauth-handler",
+	"main": "./gh-oauth-handler.js",
+	"compatibility_date": "2025-07-09"
+}

@@ -1,0 +1,10 @@
+{
+    "compilerOptions": {
+        "target": "esnext",
+        "strict": true,
+        "esModuleInterop": true
+    },
+    "include": [
+        "./ts/**/*.ts",
+    ],
+}

@@ -1,0 +1,31 @@
+{
+  "name": "openrct2-translation-helper",
+  "version": "1.0.0",
+  "description": "OpenRCT2 Translation Helper",
+  "license": "GPL-3.0",
+  "author": "Sadret",
+  "type": "module",
+  "main": "index.js",
+  "watch": {
+    "build": [
+      "ts/**/*.ts"
+    ]
+  },
+  "scripts": {
+    "build": "rollup -c rollup.config.develop.js",
+    "release": "rollup -c rollup.config.release.js",
+    "watch": "rollup -c rollup.config.develop.js -w"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-node-resolve": "^15.3.1",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^12.1.4",
+    "@types/jquery": "^3.5.32",
+    "jquery": "^3.7.1",
+    "npm-watch": "^0.13.0",
+    "rollup": "^4.44.2",
+    "tslib": "^2.8.1",
+    "typescript": "^5.8.3"
+  }
+}

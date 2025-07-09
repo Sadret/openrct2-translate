@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenRCT2 Translation Helper</title>
+
+    <script src="script.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <h1>OpenRCT2 Translation Helper</h1>
+    <div id="language-list">
+        <h2>Available Languages</h2>
+        <div id="languages"></div>
+    </div>
+    <div id="issue-list">
+        <h2>Open Issues</h2>
+        <div id="issues"></div>
+    </div>
+    <div id="translate-strings" style="display: none;">
+        <h2>Translate Strings</h2>
+        <span id="issue-id"></span>
+        <table style="border-spacing: 1em;">
+            <thead>
+                <tr>
+                    <th>String</th>
+                    <th>Original (en-GB)</th>
+                    <th></th>
+                    <th>Translation (<span id="th-lang"></span>)</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+        <button id="save-translation">Save Translation</button>
+    </div>
+</body>
+
+</html>
