@@ -2,7 +2,7 @@ import $ from "jquery";
 
 export type Data = {
   language: string;
-  issue: number;
+  issueNumber: string;
   strings: {
     key: string;
     original: string;
@@ -12,14 +12,14 @@ export type Data = {
 
 export function getData(): Data {
   const language = $("#th-lang").text();
-  const issue = Number($("#issue-id").text());
+  const issueNumber = $("#issue-id").text();
   const strings = [...$("#translate-strings tbody tr")].map(row => {
     const key = $(row).find(".strId").text();
     const original = $(row).find(".original").text();
     const translated = $(row).find(".translated").text();
     return { key, original, translated };
   });
-  return { language, issue, strings };
+  return { language, issueNumber, strings };
 }
 
 export function setData(data: Data) {

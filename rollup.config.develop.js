@@ -13,4 +13,15 @@ export default [{
 		resolve(),
 		commonjs(),
 	],
+}, {
+	input: "./ts/edit.ts",
+	output: [{
+		file: "./edit.js",
+		format: "iife",
+	}],
+	plugins: [
+		typescript(),
+		resolve(),
+		commonjs(),
+	],
 },];

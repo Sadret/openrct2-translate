@@ -1,0 +1,8 @@
+.language:hover {
+    background-color: #aaa;
+    cursor: pointer;
+}
+
+.language.active {
+    background-color: #555;
+}

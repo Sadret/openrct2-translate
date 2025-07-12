@@ -1,5 +1,43 @@
 import type { Data } from "./data";
 
+// more fields are available
+export type GitHubIssue = {
+    number: number;
+    title: string;
+    html_url: string;
+    body: string;
+    pull_request?: unknown;
+};
+
+{
+    // when loaded
+    const accessToken = new URLSearchParams(window.location.search).get("access_token");
+    if (accessToken) {
+        sessionStorage.setItem("github_token", accessToken);
+        const url = new URL(window.location.href);
+        url.searchParams.delete("access_token");
+        window.history.replaceState(null, "", String(url));
+    }
+}
+
+function getToken(): string | null {
+    const accessToken = sessionStorage.getItem("github_token");
+    if (accessToken) return accessToken;
+
+    const clientId = "Ov23ct0fDobJn5hdYuQ1";
+    const redirectUri = "https://gh-oauth-handler.sadret.workers.dev/callback";
+    const scope = "public_repo";
+    const state = encodeURIComponent(window.location.href);
+
+    window.location.href =
+        `https://github.com/login/oauth/authorize` +
+        `?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&scope=${encodeURIComponent(scope)}` +
+        `&state=${state}`;
+
+    return null;
+}
+
 export async function ghFetch(url: string): Promise<Response | null> {
     const token = getToken();
     return token ? fetch(url, {
@@ -10,23 +48,10 @@ export async function ghFetch(url: string): Promise<Response | null> {
     }) : null;
 }
 
-export function getToken(): string | null {
-    const accessToken = new URLSearchParams(window.location.search).get("access_token");
-    if (accessToken) return accessToken;
+export async function commit(data: Data, langFile: string): Promise<void> {
+    const token = getToken();
+    if (!token) return;
 
-    const clientId = "Ov23ct0fDobJn5hdYuQ1";
-    const redirectUri = "https://gh-oauth-handler.sadret.workers.dev/callback";
-    const scope = "public_repo";
-
-    window.location.href =
-        `https://github.com/login/oauth/authorize` +
-        `?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&scope=${encodeURIComponent(scope)}`;
-
-    return null;
-}
-
-export async function commit(token: string, data: Data, langFile: string): Promise<void> {
     // Fork OpenRCT2/Localisation into the user’s account
     await fetch("https://api.github.com/repos/OpenRCT2/Localisation/forks", {
         method: "POST",
@@ -91,21 +116,25 @@ export async function commit(token: string, data: Data, langFile: string): Promi
     const fileContent = getNewFileContent(data, langFile);
     const contentBase64 = utf8ToBase64Safe(fileContent);
 
-    await fetch(`https://api.github.com/repos/${username}/Localisation/contents/${filePath}`, {
+    const result = await fetch(`https://api.github.com/repos/${username}/Localisation/contents/${filePath}`, {
         method: "PUT",
         headers: {
             Authorization: `Bearer ${token}`,
             Accept: "application/vnd.github+json",
         },
         body: JSON.stringify({
-            message: `${data.language}: Apply #${data.issue}`,
+            message: `${data.language}: Apply #${data.issueNumber}`,
             content: contentBase64,
             branch: newBranch,
             sha // include only if it exists
         })
     });
-
-    console.log(`Committed changes to ${filePath} in branch ${newBranch}`);
+    if (result.ok) {
+        const response = await result.json();
+        console.log(`Committed changes to ${filePath} in branch ${newBranch}`, response.commit.html_url);
+    } else {
+        throw new Error();
+    }
 }
 
 async function getUsername(token: string): Promise<string> {

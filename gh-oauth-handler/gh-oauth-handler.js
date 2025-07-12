@@ -28,10 +28,8 @@ export default {
 				return new Response(`OAuth error: ${tokenData.error_description}`, { status: 400 });
 			}
 
-			// Redirect to your frontend with token in the fragment
-			const redirectUrl = `http://localhost:8000/?access_token=${tokenData.access_token}`;
-			// const redirectUrl = `https://sadret.github.io/openrct2-translation-helper/#access_token=${tokenData.access_token}`;
-			return Response.redirect(redirectUrl, 302);
+			const returnTo = decodeURIComponent(url.searchParams.get("state") || "/");
+			return Response.redirect(`${returnTo}${returnTo.includes('?') ? "&" : "?"}access_token=${encodeURIComponent(tokenData.access_token)}`, 302);
 		}
 
 		return new Response("Not Found", { status: 404 });

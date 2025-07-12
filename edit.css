@@ -1,0 +1,65 @@
+table {
+    border-spacing: 0;
+    border: 1px solid #d1d9e0;
+    border-radius: 6px;
+    padding-bottom: 6px;
+    background-color: #f6f8fa;
+    width: 100%;
+}
+
+tbody {
+    background-color: white;
+    font-family: Consolas, monospace;
+}
+
+th {
+    border-bottom: 1px solid #d1d9e0b3;
+}
+
+td {
+    border-bottom: 1px solid #d1d9e0b3;
+    padding: 2px 5px;
+}
+
+.no-border td:not(:first-child) {
+    border: none;
+}
+
+tr.removed td.content {
+    color: #82071e;
+    background-color: #ffebe9;
+    text-decoration: line-through;
+}
+
+tr.added td.content {
+    color: #116329;
+    background-color: #dafbe1;
+}
+
+/* disable line breaks */
+
+[contenteditable="true"] {
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+[contenteditable="true"] br {
+    display: none;
+}
+
+[contenteditable="true"] * {
+    display: inline;
+    white-space: nowrap;
+}
+
+/* styling */
+[contenteditable="true"] {
+    outline: none;
+}
+
+/* typing hint */
+[contenteditable="true"]:empty:before {
+    content: "Type here...";
+    color: #aaa;
+    pointer-events: none;
+}

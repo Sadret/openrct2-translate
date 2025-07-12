@@ -1,4 +1,4 @@
-(function (exports) {
+(function () {
 	'use strict';
 
 	function getDefaultExportFromCjs (x) {
@@ -10707,6 +10707,10 @@
 	var jqueryExports = requireJquery();
 	var $ = /*@__PURE__*/getDefaultExportFromCjs(jqueryExports);
 
+	function storeData(data) {
+	    localStorage.setItem("data", JSON.stringify(data));
+	}
+
 	function extractTranslationStrings(body) {
 	    const strings = new Map();
 	    body.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
@@ -10720,6 +10724,11 @@
 	            entry.descNew = desc;
 	    });
 	    return [...strings.values()];
+	}
+	function getStr(languageFile, strId) {
+	    const regex = new RegExp(`${strId}\\s*:(.+)`);
+	    const match = languageFile.match(regex);
+	    return match ? match[1] : "";
 	}
 
 	{
@@ -10756,105 +10765,156 @@
 	        }
 	    }) : null;
 	}
-
-	const GITHUB_API_URL = "https://api.github.com/repos/OpenRCT2/Localisation/contents/data/language";
-	async function fetchLanguages() {
-	    const res = await fetch(GITHUB_API_URL);
-	    if (!res.ok)
-	        throw new Error(`GitHub API error: ${res.status}`);
-	    const data = await res.json();
-	    return data
-	        .filter((file) => file.name.endsWith(".txt"))
-	        .map((file) => file.name.replace(/\.txt$/, ""));
-	}
-	const GITHUB_ISSUES_URL = "https://api.github.com/repos/OpenRCT2/Localisation/issues";
-	async function* streamOpenIssues() {
-	    const perPage = 10;
-	    let page = 1;
-	    while (true) {
-	        const url = `${GITHUB_ISSUES_URL}?state=open&per_page=${perPage}&page=${page}`;
-	        const res = await ghFetch(url);
-	        if (!res)
-	            throw new Error(`Failed to fetch issues (page ${page})`);
-	        if (!res.ok)
-	            throw new Error(`Failed to fetch issues (page ${page}): ${res.status}`);
-	        const issues = await res.json();
-	        if (issues.length === 0)
-	            break;
-	        yield issues;
-	        page++;
-	    }
-	}
-	function extractLanguageChecklist(body) {
-	    const regex = /- \[( |x)\] ([a-z]{2}-[A-Z]{2})/g;
-	    // const map: Record<string, boolean> = {};
-	    const list = [];
-	    let match;
-	    while ((match = regex.exec(body)) !== null) {
-	        const checked = match[1] === "x";
-	        const lang = match[2];
-	        if (!checked)
-	            list.push(lang);
-	        // map[lang] = checked;
-	    }
-	    // return map;
-	    return list;
-	}
-	function addLanguageCSSRules(languages) {
-	    const style = document.createElement("style");
-	    document.head.appendChild(style);
-	    const sheet = style.sheet;
-	    sheet.insertRule(".issue {display: none}", sheet.cssRules.length);
-	    sheet.insertRule("#issues.all-show .issue {display: inherit}", sheet.cssRules.length);
-	    for (const lang of languages)
-	        sheet.insertRule(`#issues.${lang}-show .issue.${lang} {display: inherit}`, sheet.cssRules.length);
-	}
-	$(() => {
-	    $("#issues").addClass(`all-show`);
-	    fetchLanguages().then(languages => {
-	        addLanguageCSSRules(languages);
-	        languages.forEach(language => {
-	            $("<div>")
-	                .addClass(`language ${language}`)
-	                .appendTo("#languages")
-	                .append($("<span>").text(language))
-	                .append($("<span>").addClass("count"))
-	                .on("click", function () {
-	                $(this).parent().children().removeClass("active");
-	                const off = $("#issues").hasClass(`${language}-show`);
-	                if (!off)
-	                    $(this).addClass("active");
-	                $("#issues").removeClass();
-	                $("#issues").addClass(off ? "all-show" : `${language}-show`);
-	            });
+	async function commit(data, langFile) {
+	    const token = getToken();
+	    if (!token)
+	        return;
+	    // Fork OpenRCT2/Localisation into the user’s account
+	    await fetch("https://api.github.com/repos/OpenRCT2/Localisation/forks", {
+	        method: "POST",
+	        headers: {
+	            Authorization: `Bearer ${token}`,
+	            Accept: "application/vnd.github+json",
+	        }
+	    });
+	    const username = await getUsername(token); // fetches /user
+	    for (let i = 0; i < 10; i++) {
+	        const res = await fetch(`https://api.github.com/repos/${username}/Localisation`, {
+	            headers: { Authorization: `Bearer ${token}` }
 	        });
-	        (async () => {
-	            for await (const issues of streamOpenIssues()) {
-	                issues.filter(issue => !issue.pull_request).forEach(issue => {
-	                    const missingLanguages = extractLanguageChecklist(issue.body);
-	                    $("<details>")
-	                        .addClass("issue")
-	                        .addClass(missingLanguages.join(" "))
-	                        .appendTo("#issues")
-	                        .append($("<summary>").append($("<a>")
-	                        .attr("href", issue.html_url)
-	                        .text(`#${issue.number}`), $("<span>").text(` ${issue.title} (`), $("<span>").css("display", "inline-flex").css("gap", "0.5em").append(missingLanguages.map(language => $("<a>")
-	                        .addClass(language)
-	                        .text(language)
-	                        .attr("href", `edit.html?language=${language}&issue=${issue.number}`))), $("<span>").text(`)`)), extractTranslationStrings(issue.body).map(str => $("<pre>").text(str.descNew || str.descOld || "")));
-	                });
-	                languages.forEach(language => {
-	                    const count = $(`#issues .issue.${language}`).length;
-	                    if (count)
-	                        $(`#languages .${language} .count`).text(` (${count})`);
-	                });
+	        if (res.ok) {
+	            await res.json();
+	            break;
+	        }
+	        await new Promise(r => setTimeout(r, 10 << i));
+	    }
+	    // Get SHA of master in upstream repo
+	    const baseRef = await fetch("https://api.github.com/repos/OpenRCT2/Localisation/git/ref/heads/master", { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+	    const baseSha = baseRef.object.sha;
+	    // Create new branch in user's fork
+	    const newBranch = "translate-" + data.language + "-" + new Date().toISOString().replace(/[^\w]/g, "");
+	    await fetch(`https://api.github.com/repos/${username}/Localisation/git/refs`, {
+	        method: "POST",
+	        headers: {
+	            Authorization: `Bearer ${token}`,
+	            Accept: "application/vnd.github+json",
+	        },
+	        body: JSON.stringify({
+	            ref: `refs/heads/${newBranch}`,
+	            sha: baseSha,
+	        })
+	    });
+	    // Get existing file's SHA (only if updating)
+	    let sha = undefined;
+	    const filePath = `data/language/${data.language}.txt`;
+	    const fileRes = await fetch(`https://api.github.com/repos/${username}/Localisation/contents/${filePath}?ref=${newBranch}`, { headers: { Authorization: `Bearer ${token}` } });
+	    if (fileRes.ok) {
+	        const fileData = await fileRes.json();
+	        sha = fileData.sha;
+	    }
+	    // Commit the updated file
+	    const fileContent = getNewFileContent(data, langFile);
+	    const contentBase64 = utf8ToBase64Safe(fileContent);
+	    const result = await fetch(`https://api.github.com/repos/${username}/Localisation/contents/${filePath}`, {
+	        method: "PUT",
+	        headers: {
+	            Authorization: `Bearer ${token}`,
+	            Accept: "application/vnd.github+json",
+	        },
+	        body: JSON.stringify({
+	            message: `${data.language}: Apply #${data.issueNumber}`,
+	            content: contentBase64,
+	            branch: newBranch,
+	            sha // include only if it exists
+	        })
+	    });
+	    if (result.ok) {
+	        const response = await result.json();
+	        console.log(`Committed changes to ${filePath} in branch ${newBranch}`, response.commit.html_url);
+	    }
+	    else {
+	        throw new Error();
+	    }
+	}
+	async function getUsername(token) {
+	    const res = await fetch("https://api.github.com/user", {
+	        headers: { Authorization: `Bearer ${token}` }
+	    });
+	    const data = await res.json();
+	    return data.login;
+	}
+	function getNewFileContent(data, langFile) {
+	    const lines = langFile.trim().split("\n");
+	    const out = [];
+	    let lineIdx = 0;
+	    data.strings.sort((a, b) => a.key.localeCompare(b.key)).forEach(entry => {
+	        for (; lineIdx < lines.length; lineIdx++) {
+	            switch (true) {
+	                case lines[lineIdx].trim() === "":
+	                case lines[lineIdx].startsWith("#"):
+	                case entry.key.localeCompare(lines[lineIdx]) > 0:
+	                    // line should be before this entry
+	                    out.push(lines[lineIdx]);
+	                    break;
+	                case lines[lineIdx].startsWith(entry.key):
+	                    // entry already exists, skip line
+	                    lineIdx++;
+	                default:
+	                    out.push(`${entry.key}    :${entry.translated}`);
+	                    return;
 	            }
-	        })();
+	        }
+	        out.push(`${entry.key}    :${entry.translated}`);
+	    });
+	    for (; lineIdx < lines.length; lineIdx++)
+	        out.push(lines[lineIdx]);
+	    out.push(""); // new line at the end of the file
+	    return out.join("\n");
+	}
+	function utf8ToBase64Safe(str) {
+	    const utf8Bytes = new TextEncoder().encode(str);
+	    let binary = "";
+	    const chunkSize = 0x8000; // 32K
+	    for (let i = 0; i < utf8Bytes.length; i += chunkSize) {
+	        const chunk = utf8Bytes.subarray(i, i + chunkSize);
+	        binary += String.fromCharCode(...chunk);
+	    }
+	    return btoa(binary);
+	}
+
+	$(async () => {
+	    const params = new URLSearchParams(window.location.search);
+	    const language = params.get("language");
+	    const issueNumber = params.get("issue");
+	    if (!language || !issueNumber)
+	        return window.location.href = "/";
+	    $("#language").text(language);
+	    $("h1").text(`#${issueNumber}`);
+	    const res = await ghFetch(`https://api.github.com/repos/OpenRCT2/Localisation/issues/${issueNumber}`);
+	    if (!res)
+	        throw new Error(); // TODO: handle
+	    const issue = await res.json();
+	    $("h1").text(`#${issue.number}: ${issue.title}`);
+	    const strings = extractTranslationStrings(issue.body);
+	    const languageFile = await fetch(`https://raw.githubusercontent.com/OpenRCT2/Localisation/master/data/language/${language}.txt`).then(res => res.text());
+	    strings.forEach(str => {
+	        if (str.descOld)
+	            $("<tr>").addClass("removed").addClass(str.descOld ? "no-border" : "").append($("<td>").addClass("strId").text(str.strId).attr("rowspan", str.descNew ? 2 : 1), $("<td>").addClass("original content").text(str.descOld), $("<td>").addClass("translated content").text(getStr(languageFile, str.strId))).appendTo("#strings tbody");
+	        if (str.descNew)
+	            $("<tr>").addClass("added").append($("<td>").addClass("strId").text(str.strId).css("display", str.descOld ? "none" : ""), $("<td>").addClass("original content").text(str.descNew), $("<td>").addClass("translated content").attr("contenteditable", "true").text(getStr(languageFile, str.strId))).appendTo("#strings tbody");
+	    });
+	    // TODO: remove removed strings
+	    $("#save-translation").on("click", () => {
+	        const strings = [...$("#strings tbody tr.added")].map(row => {
+	            const key = $(row).find(".strId").text();
+	            const original = $(row).find(".original").text();
+	            const translated = $(row).find(".translated").text();
+	            return { key, original, translated };
+	        });
+	        const data = { language, issueNumber, strings };
+	        storeData(data);
+	        commit(data, languageFile);
 	    });
 	});
 
-	exports.streamOpenIssues = streamOpenIssues;
-
-	return exports;
-
-})({});
+})();
