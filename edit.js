@@ -10707,10 +10707,6 @@
 	var jqueryExports = requireJquery();
 	var $ = /*@__PURE__*/getDefaultExportFromCjs(jqueryExports);
 
-	function storeData(data) {
-	    localStorage.setItem("data", JSON.stringify(data));
-	}
-
 	function extractTranslationStringsFromIssue(issue) {
 	    const strings = new Map();
 	    issue.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
@@ -10728,33 +10724,32 @@
 	function extractTranslationFromLanguageFile(languageFile, strId) {
 	    const regex = new RegExp(`${strId}\\s*:(.+)`);
 	    const match = languageFile.match(regex);
-	    return match ? match[1] : "";
+	    return match && match[1];
 	}
-	function updateLanguageFile(languageFile, data) {
+	function updateLanguageFile(languageFile, translations) {
 	    const lines = languageFile.trim().split("\n");
 	    const out = [];
 	    let lineIdx = 0;
-	    data.strings.sort((a, b) => a.key.localeCompare(b.key)).forEach(entry => {
-	        for (; lineIdx < lines.length; lineIdx++) {
+	    translations.sort(([a], [b]) => a.localeCompare(b)).forEach(([strId, translation]) => {
+	        while (lineIdx < lines.length) {
 	            switch (true) {
 	                case lines[lineIdx].trim() === "":
 	                case lines[lineIdx].startsWith("#"):
-	                case entry.key.localeCompare(lines[lineIdx]) > 0:
+	                case strId.localeCompare(lines[lineIdx]) > 0:
 	                    // line should be before this entry
-	                    out.push(lines[lineIdx]);
-	                    break;
-	                case lines[lineIdx].startsWith(entry.key):
+	                    out.push(lines[lineIdx++]);
+	                    continue; // consider next line
+	                case lines[lineIdx].startsWith(strId):
 	                    // entry already exists, skip line
 	                    lineIdx++;
-	                default:
-	                    out.push(`${entry.key}    :${entry.translated}`);
-	                    return;
 	            }
+	            // insert entry here
+	            break;
 	        }
-	        out.push(`${entry.key}    :${entry.translated}`);
+	        out.push(`${strId}    :${translation}`);
 	    });
-	    for (; lineIdx < lines.length; lineIdx++)
-	        out.push(lines[lineIdx]);
+	    while (lineIdx < lines.length)
+	        out.push(lines[lineIdx++]);
 	    out.push(""); // new line at the end of the file
 	    return out.join("\n");
 	}
@@ -10868,6 +10863,19 @@
 	    }));
 	}
 
+	function getTranslationKey(language, strId) {
+	    return `${language}_${strId}`;
+	}
+	function getTranslation(language, strId) {
+	    return localStorage.getItem(getTranslationKey(language, strId));
+	}
+	function setTranslation(language, strId, translation) {
+	    localStorage.setItem(getTranslationKey(language, strId), translation);
+	}
+	function removeTranslation(language, strId) {
+	    localStorage.removeItem(getTranslationKey(language, strId));
+	}
+
 	$(async () => {
 	    const params = new URLSearchParams(window.location.search);
 	    const language = params.get("language");
@@ -10882,26 +10890,36 @@
 	    $("h1").text(`#${issue.number}: ${issue.title}`);
 	    const strings = extractTranslationStringsFromIssue(issue.body);
 	    const languageFile = await fetch(`https://raw.githubusercontent.com/OpenRCT2/Localisation/master/data/language/${language}.txt`).then(res => res.text());
+	    const extractTranslation = (strId) => {
+	        const stored = getTranslation(language, strId);
+	        const actual = extractTranslationFromLanguageFile(languageFile, strId);
+	        switch (stored) {
+	            case actual:
+	                removeTranslation(language, strId);
+	            case null:
+	                return actual;
+	            default:
+	                return stored;
+	        }
+	    };
 	    strings.forEach(str => {
 	        if (str.descOld)
-	            $("<tr>").addClass("removed").addClass(str.descOld ? "no-border" : "").append($("<td>").addClass("strId").text(str.strId).attr("rowspan", str.descNew ? 2 : 1), $("<td>").addClass("original content").text(str.descOld), $("<td>").addClass("translated content").text(extractTranslationFromLanguageFile(languageFile, str.strId))).appendTo("#strings tbody");
+	            $("<tr>").addClass("removed").addClass(str.descOld ? "no-border" : "").append($("<td>").addClass("strId").text(str.strId).attr("rowspan", str.descNew ? 2 : 1), $("<td>").addClass("original content").text(str.descOld), $("<td>").addClass("translation content").text(extractTranslationFromLanguageFile(languageFile, str.strId) || "")).appendTo("#strings tbody");
 	        if (str.descNew)
-	            $("<tr>").addClass("added").append($("<td>").addClass("strId").text(str.strId).css("display", str.descOld ? "none" : ""), $("<td>").addClass("original content").text(str.descNew), $("<td>").addClass("translated content").attr("contenteditable", "true").text(extractTranslationFromLanguageFile(languageFile, str.strId))).appendTo("#strings tbody");
+	            $("<tr>").addClass("added").append($("<td>").addClass("strId").text(str.strId).css("display", str.descOld ? "none" : ""), $("<td>").addClass("original content").text(str.descNew), $("<td>").addClass("translation content").attr("contenteditable", "true").text(extractTranslation(str.strId) || "")).appendTo("#strings tbody");
 	    });
 	    $("#save-translation").on("click", async () => {
-	        const strings = [...$("#strings tbody tr.added")].map(row => {
-	            const key = $(row).find(".strId").text();
-	            const original = $(row).find(".original").text();
-	            const translated = $(row).find(".translated").text();
-	            return { key, original, translated };
+	        const translations = [...$("#strings tbody tr.added")].map(row => {
+	            const strId = $(row).find(".strId").text();
+	            const translation = $(row).find(".translation").text();
+	            setTranslation(language, strId, translation);
+	            return [strId, translation];
 	        });
-	        const data = { language, issueNumber: issueId, strings };
-	        storeData(data);
 	        try {
 	            const userName = await getUserName();
 	            const branchName = "translate-" + language + "-" + new Date().toISOString().replace(/[^\w]/g, "");
-	            const content = updateLanguageFile(languageFile, data);
-	            const message = `${data.language}: Apply #${data.issueNumber}`;
+	            const content = updateLanguageFile(languageFile, translations);
+	            const message = `${language}: Apply #${issueId}`;
 	            const forkResult = await fork(userName);
 	            console.log(`created a new fork for user ${userName}`, forkResult.html_url);
 	            const branchResult = await branch(userName, branchName);

@@ -1,5 +1,3 @@
-import type { Data } from "./data";
-
 type TranslationString = {
     strId: string;
     descNew?: string;
@@ -21,39 +19,38 @@ export function extractTranslationStringsFromIssue(issue: string): TranslationSt
     return [...strings.values()].sort((a, b) => a.strId.localeCompare(b.strId));
 }
 
-export function extractTranslationFromLanguageFile(languageFile: string, strId: string): string {
+export function extractTranslationFromLanguageFile(languageFile: string, strId: string): string | null {
     const regex = new RegExp(`${strId}\\s*:(.+)`);
     const match = languageFile.match(regex);
-    return match ? match[1] : "";
+    return match && match[1];
 }
 
-export function updateLanguageFile(languageFile: string, data: Data): string {
+export function updateLanguageFile(languageFile: string, translations: [string, string][]): string {
     const lines = languageFile.trim().split("\n");
     const out: string[] = [];
 
     let lineIdx = 0;
 
-    data.strings.sort((a, b) => a.key.localeCompare(b.key)).forEach(entry => {
-        for (; lineIdx < lines.length; lineIdx++) {
+    translations.sort(([a], [b]) => a.localeCompare(b)).forEach(([strId, translation]) => {
+        while (lineIdx < lines.length) {
             switch (true) {
                 case lines[lineIdx].trim() === "":
                 case lines[lineIdx].startsWith("#"):
-                case entry.key.localeCompare(lines[lineIdx]) > 0:
+                case strId.localeCompare(lines[lineIdx]) > 0:
                     // line should be before this entry
-                    out.push(lines[lineIdx]);
-                    break;
-                case lines[lineIdx].startsWith(entry.key):
+                    out.push(lines[lineIdx++]);
+                    continue; // consider next line
+                case lines[lineIdx].startsWith(strId):
                     // entry already exists, skip line
                     lineIdx++;
-                default:
-                    out.push(`${entry.key}    :${entry.translated}`);
-                    return;
             }
+            // insert entry here
+            break;
         }
-        out.push(`${entry.key}    :${entry.translated}`);
+        out.push(`${strId}    :${translation}`);
     });
-    for (; lineIdx < lines.length; lineIdx++)
-        out.push(lines[lineIdx]);
+    while (lineIdx < lines.length)
+        out.push(lines[lineIdx++]);
 
     out.push(""); // new line at the end of the file
 
