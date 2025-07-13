@@ -1,5 +1,5 @@
 import $ from "jquery";
-import { extractTranslationStrings } from "./gh-utils";
+import { extractTranslationStringsFromIssue } from "./gh-utils";
 import { ghFetch, type GitHubIssue } from "./github";
 
 type LanguageFile = {
@@ -122,7 +122,7 @@ $(() => {
                                 ),
                                 $("<span>").text(`)`),
                             ),
-                            extractTranslationStrings(issue.body).map(str => $("<pre>").text(str.descNew || str.descOld || "")),
+                            extractTranslationStringsFromIssue(issue.body).map(str => $("<pre>").text(str.descNew || str.descOld || "")),
                         );
                 });
                 languages.forEach(language => {

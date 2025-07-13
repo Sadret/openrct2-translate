@@ -10707,9 +10707,9 @@
 	var jqueryExports = requireJquery();
 	var $ = /*@__PURE__*/getDefaultExportFromCjs(jqueryExports);
 
-	function extractTranslationStrings(body) {
+	function extractTranslationStringsFromIssue(issue) {
 	    const strings = new Map();
-	    body.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
+	    issue.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
 	        const [_, sign, strId, desc] = match;
 	        if (!strings.has(strId))
 	            strings.set(strId, { strId });
@@ -10719,7 +10719,7 @@
 	        else
 	            entry.descNew = desc;
 	    });
-	    return [...strings.values()];
+	    return [...strings.values()].sort((a, b) => a.strId.localeCompare(b.strId));
 	}
 
 	{
@@ -10747,7 +10747,7 @@
 	            `&state=${state}`;
 	    return null;
 	}
-	async function ghFetch(url) {
+	async function ghFetch(url, oauth) {
 	    const token = getToken();
 	    return token ? fetch(url, {
 	        headers: {
@@ -10841,7 +10841,7 @@
 	                        .text(`#${issue.number}`), $("<span>").text(` ${issue.title} (`), $("<span>").css("display", "inline-flex").css("gap", "0.5em").append(missingLanguages.map(language => $("<a>")
 	                        .addClass(language)
 	                        .text(language)
-	                        .attr("href", `edit.html?language=${language}&issue=${issue.number}`))), $("<span>").text(`)`)), extractTranslationStrings(issue.body).map(str => $("<pre>").text(str.descNew || str.descOld || "")));
+	                        .attr("href", `edit.html?language=${language}&issue=${issue.number}`))), $("<span>").text(`)`)), extractTranslationStringsFromIssue(issue.body).map(str => $("<pre>").text(str.descNew || str.descOld || "")));
 	                });
 	                languages.forEach(language => {
 	                    const count = $(`#issues .issue.${language}`).length;

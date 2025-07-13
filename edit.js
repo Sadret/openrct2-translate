@@ -10711,9 +10711,9 @@
 	    localStorage.setItem("data", JSON.stringify(data));
 	}
 
-	function extractTranslationStrings(body) {
+	function extractTranslationStringsFromIssue(issue) {
 	    const strings = new Map();
-	    body.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
+	    issue.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
 	        const [_, sign, strId, desc] = match;
 	        if (!strings.has(strId))
 	            strings.set(strId, { strId });
@@ -10723,128 +10723,15 @@
 	        else
 	            entry.descNew = desc;
 	    });
-	    return [...strings.values()];
+	    return [...strings.values()].sort((a, b) => a.strId.localeCompare(b.strId));
 	}
-	function getStr(languageFile, strId) {
+	function extractTranslationFromLanguageFile(languageFile, strId) {
 	    const regex = new RegExp(`${strId}\\s*:(.+)`);
 	    const match = languageFile.match(regex);
 	    return match ? match[1] : "";
 	}
-
-	{
-	    // when loaded
-	    const accessToken = new URLSearchParams(window.location.search).get("access_token");
-	    if (accessToken) {
-	        sessionStorage.setItem("github_token", accessToken);
-	        const url = new URL(window.location.href);
-	        url.searchParams.delete("access_token");
-	        window.history.replaceState(null, "", String(url));
-	    }
-	}
-	function getToken() {
-	    const accessToken = sessionStorage.getItem("github_token");
-	    if (accessToken)
-	        return accessToken;
-	    const clientId = "Ov23ct0fDobJn5hdYuQ1";
-	    const redirectUri = "https://gh-oauth-handler.sadret.workers.dev/callback";
-	    const scope = "public_repo";
-	    const state = encodeURIComponent(window.location.href);
-	    window.location.href =
-	        `https://github.com/login/oauth/authorize` +
-	            `?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}` +
-	            `&scope=${encodeURIComponent(scope)}` +
-	            `&state=${state}`;
-	    return null;
-	}
-	async function ghFetch(url) {
-	    const token = getToken();
-	    return token ? fetch(url, {
-	        headers: {
-	            Authorization: `Bearer ${token}`,
-	            Accept: "application/vnd.github.v3+json",
-	        }
-	    }) : null;
-	}
-	async function commit(data, langFile) {
-	    const token = getToken();
-	    if (!token)
-	        return;
-	    // Fork OpenRCT2/Localisation into the user’s account
-	    await fetch("https://api.github.com/repos/OpenRCT2/Localisation/forks", {
-	        method: "POST",
-	        headers: {
-	            Authorization: `Bearer ${token}`,
-	            Accept: "application/vnd.github+json",
-	        }
-	    });
-	    const username = await getUsername(token); // fetches /user
-	    for (let i = 0; i < 10; i++) {
-	        const res = await fetch(`https://api.github.com/repos/${username}/Localisation`, {
-	            headers: { Authorization: `Bearer ${token}` }
-	        });
-	        if (res.ok) {
-	            await res.json();
-	            break;
-	        }
-	        await new Promise(r => setTimeout(r, 10 << i));
-	    }
-	    // Get SHA of master in upstream repo
-	    const baseRef = await fetch("https://api.github.com/repos/OpenRCT2/Localisation/git/ref/heads/master", { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
-	    const baseSha = baseRef.object.sha;
-	    // Create new branch in user's fork
-	    const newBranch = "translate-" + data.language + "-" + new Date().toISOString().replace(/[^\w]/g, "");
-	    await fetch(`https://api.github.com/repos/${username}/Localisation/git/refs`, {
-	        method: "POST",
-	        headers: {
-	            Authorization: `Bearer ${token}`,
-	            Accept: "application/vnd.github+json",
-	        },
-	        body: JSON.stringify({
-	            ref: `refs/heads/${newBranch}`,
-	            sha: baseSha,
-	        })
-	    });
-	    // Get existing file's SHA (only if updating)
-	    let sha = undefined;
-	    const filePath = `data/language/${data.language}.txt`;
-	    const fileRes = await fetch(`https://api.github.com/repos/${username}/Localisation/contents/${filePath}?ref=${newBranch}`, { headers: { Authorization: `Bearer ${token}` } });
-	    if (fileRes.ok) {
-	        const fileData = await fileRes.json();
-	        sha = fileData.sha;
-	    }
-	    // Commit the updated file
-	    const fileContent = getNewFileContent(data, langFile);
-	    const contentBase64 = utf8ToBase64Safe(fileContent);
-	    const result = await fetch(`https://api.github.com/repos/${username}/Localisation/contents/${filePath}`, {
-	        method: "PUT",
-	        headers: {
-	            Authorization: `Bearer ${token}`,
-	            Accept: "application/vnd.github+json",
-	        },
-	        body: JSON.stringify({
-	            message: `${data.language}: Apply #${data.issueNumber}`,
-	            content: contentBase64,
-	            branch: newBranch,
-	            sha // include only if it exists
-	        })
-	    });
-	    if (result.ok) {
-	        const response = await result.json();
-	        console.log(`Committed changes to ${filePath} in branch ${newBranch}`, response.commit.html_url);
-	    }
-	    else {
-	        throw new Error();
-	    }
-	}
-	async function getUsername(token) {
-	    const res = await fetch("https://api.github.com/user", {
-	        headers: { Authorization: `Bearer ${token}` }
-	    });
-	    const data = await res.json();
-	    return data.login;
-	}
-	function getNewFileContent(data, langFile) {
-	    const lines = langFile.trim().split("\n");
+	function updateLanguageFile(languageFile, data) {
+	    const lines = languageFile.trim().split("\n");
 	    const out = [];
 	    let lineIdx = 0;
 	    data.strings.sort((a, b) => a.key.localeCompare(b.key)).forEach(entry => {
@@ -10871,6 +10758,29 @@
 	    out.push(""); // new line at the end of the file
 	    return out.join("\n");
 	}
+
+	// retrieve access token on page load
+	{
+	    const accessToken = new URLSearchParams(window.location.search).get("access_token");
+	    if (accessToken) {
+	        sessionStorage.setItem("github_token", accessToken);
+	        const url = new URL(window.location.href);
+	        url.searchParams.delete("access_token");
+	        window.history.replaceState(null, "", String(url));
+	    }
+	}
+	/* CLASSES AND TYPES */
+	class HTTPError extends Error {
+	    status;
+	    statusText;
+	    constructor(status, statusText) {
+	        super(`HTTP Error ${status}: ${statusText}`);
+	        this.status = status;
+	        this.statusText = statusText;
+	        this.name = "HTTPError";
+	    }
+	}
+	/* HELPER FUNCTIONS */
 	function utf8ToBase64Safe(str) {
 	    const utf8Bytes = new TextEncoder().encode(str);
 	    let binary = "";
@@ -10881,39 +10791,99 @@
 	    }
 	    return btoa(binary);
 	}
+	/* FETCH WRAPPERS */
+	async function fetchURL(url, init) {
+	    const response = await fetch(url, init);
+	    if (!response.ok)
+	        throw new HTTPError(response.status, response.statusText);
+	    return response.json();
+	}
+	async function fetchAPI(url, method = "GET", body) {
+	    const accessToken = sessionStorage.getItem("github_token");
+	    return await fetchURL("https://api.github.com/" + url, accessToken ? {
+	        method,
+	        headers: {
+	            Authorization: `Bearer ${accessToken}`,
+	            Accept: "application/vnd.github.v3+json",
+	        },
+	        body,
+	    } : undefined);
+	}
+	async function getUserName() {
+	    return (await fetchAPI("user")).login;
+	}
+	async function getIssue(issueId) {
+	    return await fetchAPI(`repos/OpenRCT2/Localisation/issues/${issueId}`);
+	}
+	async function fork(username) {
+	    await fetchAPI("repos/OpenRCT2/Localisation/forks", "POST");
+	    // Wait until the fork is visible
+	    for (let i = 0; i < 10; i++)
+	        try {
+	            return await fetchAPI(`repos/${username}/Localisation`);
+	        }
+	        catch {
+	            await new Promise(r => setTimeout(r, 10 << i));
+	        }
+	    throw new Error(); // unknown error: cannot create or retrieve fork
+	}
+	async function branch(userName, branchName) {
+	    const baseSHA = (await fetchAPI("repos/OpenRCT2/Localisation/git/ref/heads/master")).object.sha;
+	    return await fetchAPI(`repos/${userName}/Localisation/git/refs`, "POST", JSON.stringify({
+	        ref: `refs/heads/${branchName}`,
+	        sha: baseSHA,
+	    }));
+	}
+	async function commit(userName, branchName, language, content, message) {
+	    const filePath = `repos/${userName}/Localisation/contents/data/language/${language}.txt`;
+	    const sha = (await fetchAPI(`${filePath}?ref=${branchName}`)).sha;
+	    return await fetchAPI(filePath, "PUT", JSON.stringify({
+	        content: utf8ToBase64Safe(content),
+	        message,
+	        branch: branchName,
+	        sha,
+	    }));
+	}
 
 	$(async () => {
 	    const params = new URLSearchParams(window.location.search);
 	    const language = params.get("language");
-	    const issueNumber = params.get("issue");
-	    if (!language || !issueNumber)
+	    const issueId = params.get("issue");
+	    if (!language || !issueId)
 	        return window.location.href = "/";
 	    $("#language").text(language);
-	    $("h1").text(`#${issueNumber}`);
-	    const res = await ghFetch(`https://api.github.com/repos/OpenRCT2/Localisation/issues/${issueNumber}`);
-	    if (!res)
-	        throw new Error(); // TODO: handle
-	    const issue = await res.json();
+	    $("h1").text(`#${issueId}`);
+	    const issue = await getIssue(issueId).catch(e => console.log(e));
+	    if (!issue)
+	        return;
 	    $("h1").text(`#${issue.number}: ${issue.title}`);
-	    const strings = extractTranslationStrings(issue.body);
+	    const strings = extractTranslationStringsFromIssue(issue.body);
 	    const languageFile = await fetch(`https://raw.githubusercontent.com/OpenRCT2/Localisation/master/data/language/${language}.txt`).then(res => res.text());
 	    strings.forEach(str => {
 	        if (str.descOld)
-	            $("<tr>").addClass("removed").addClass(str.descOld ? "no-border" : "").append($("<td>").addClass("strId").text(str.strId).attr("rowspan", str.descNew ? 2 : 1), $("<td>").addClass("original content").text(str.descOld), $("<td>").addClass("translated content").text(getStr(languageFile, str.strId))).appendTo("#strings tbody");
+	            $("<tr>").addClass("removed").addClass(str.descOld ? "no-border" : "").append($("<td>").addClass("strId").text(str.strId).attr("rowspan", str.descNew ? 2 : 1), $("<td>").addClass("original content").text(str.descOld), $("<td>").addClass("translated content").text(extractTranslationFromLanguageFile(languageFile, str.strId))).appendTo("#strings tbody");
 	        if (str.descNew)
-	            $("<tr>").addClass("added").append($("<td>").addClass("strId").text(str.strId).css("display", str.descOld ? "none" : ""), $("<td>").addClass("original content").text(str.descNew), $("<td>").addClass("translated content").attr("contenteditable", "true").text(getStr(languageFile, str.strId))).appendTo("#strings tbody");
+	            $("<tr>").addClass("added").append($("<td>").addClass("strId").text(str.strId).css("display", str.descOld ? "none" : ""), $("<td>").addClass("original content").text(str.descNew), $("<td>").addClass("translated content").attr("contenteditable", "true").text(extractTranslationFromLanguageFile(languageFile, str.strId))).appendTo("#strings tbody");
 	    });
-	    // TODO: remove removed strings
-	    $("#save-translation").on("click", () => {
+	    $("#save-translation").on("click", async () => {
 	        const strings = [...$("#strings tbody tr.added")].map(row => {
 	            const key = $(row).find(".strId").text();
 	            const original = $(row).find(".original").text();
 	            const translated = $(row).find(".translated").text();
 	            return { key, original, translated };
 	        });
-	        const data = { language, issueNumber, strings };
+	        const data = { language, issueNumber: issueId, strings };
 	        storeData(data);
-	        commit(data, languageFile);
+	        const userName = await getUserName();
+	        const branchName = "translate-" + language + "-" + new Date().toISOString().replace(/[^\w]/g, "");
+	        const content = updateLanguageFile(languageFile, data);
+	        const message = `${data.language}: Apply #${data.issueNumber}`;
+	        const forkResult = await fork(userName);
+	        console.log(`created a new fork for user ${userName}`, forkResult.html_url);
+	        const branchResult = await branch(userName, branchName);
+	        console.log(`created a new branch ${branchName}`, branchResult.url);
+	        const commitResult = await commit(userName, branchName, language, content, message);
+	        console.log(`committed changes to ${language}.txt`, commitResult.commit.html_url);
 	    });
 	});
 
