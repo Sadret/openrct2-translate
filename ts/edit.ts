@@ -1,7 +1,7 @@
 import $ from "jquery";
 import { storeData } from "./data";
 import { extractTranslationFromLanguageFile, extractTranslationStringsFromIssue, updateLanguageFile } from "./gh-utils";
-import { branch, commit, fork, getIssue, getUserName } from "./github";
+import { branch, commit, fork, getIssue, getUserName, HTTPError, logIn } from "./github";
 
 $(async () => {
     const params = new URLSearchParams(window.location.search);
@@ -47,18 +47,23 @@ $(async () => {
         const data = { language, issueNumber: issueId, strings };
         storeData(data);
 
-        const userName = await getUserName();
-        const branchName = "translate-" + language + "-" + new Date().toISOString().replace(/[^\w]/g, "");
-        const content = updateLanguageFile(languageFile, data);
-        const message = `${data.language}: Apply #${data.issueNumber}`;
+        try {
+            const userName = await getUserName();
+            const branchName = "translate-" + language + "-" + new Date().toISOString().replace(/[^\w]/g, "");
+            const content = updateLanguageFile(languageFile, data);
+            const message = `${data.language}: Apply #${data.issueNumber}`;
 
-        const forkResult = await fork(userName);
-        console.log(`created a new fork for user ${userName}`, forkResult.html_url);
+            const forkResult = await fork(userName);
+            console.log(`created a new fork for user ${userName}`, forkResult.html_url);
 
-        const branchResult = await branch(userName, branchName);
-        console.log(`created a new branch ${branchName}`, branchResult.url);
+            const branchResult = await branch(userName, branchName);
+            console.log(`created a new branch ${branchName}`, branchResult.url);
 
-        const commitResult = await commit(userName, branchName, language, content, message);
-        console.log(`committed changes to ${language}.txt`, commitResult.commit.html_url);
+            const commitResult = await commit(userName, branchName, language, content, message);
+            console.log(`committed changes to ${language}.txt`, commitResult.commit.html_url);
+        } catch (error) {
+            if (error instanceof HTTPError)
+                logIn();
+        }
     });
 });

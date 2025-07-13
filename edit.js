@@ -10800,14 +10800,37 @@
 	}
 	async function fetchAPI(url, method = "GET", body) {
 	    const accessToken = sessionStorage.getItem("github_token");
-	    return await fetchURL("https://api.github.com/" + url, accessToken ? {
-	        method,
-	        headers: {
-	            Authorization: `Bearer ${accessToken}`,
-	            Accept: "application/vnd.github.v3+json",
-	        },
-	        body,
-	    } : undefined);
+	    try {
+	        return await fetchURL("https://api.github.com/" + url, accessToken ? {
+	            method,
+	            headers: {
+	                Authorization: `Bearer ${accessToken}`,
+	                Accept: "application/vnd.github.v3+json",
+	            },
+	            body,
+	        } : undefined);
+	    }
+	    catch (error) {
+	        if (accessToken && error instanceof HTTPError && error.status === 401) {
+	            // access token is invalid: remove and retry without
+	            sessionStorage.removeItem("github_token");
+	            return await fetchAPI(url, method, body);
+	        }
+	        else
+	            throw error;
+	    }
+	}
+	/* GITHUB FUNCTIONS */
+	function logIn() {
+	    const clientId = "Ov23ct0fDobJn5hdYuQ1";
+	    const redirectUri = "https://gh-oauth-handler.sadret.workers.dev/callback";
+	    const scope = "public_repo";
+	    const state = encodeURIComponent(window.location.href);
+	    window.location.href =
+	        `https://github.com/login/oauth/authorize` +
+	            `?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}` +
+	            `&scope=${encodeURIComponent(scope)}` +
+	            `&state=${state}`;
 	}
 	async function getUserName() {
 	    return (await fetchAPI("user")).login;
@@ -10874,16 +10897,22 @@
 	        });
 	        const data = { language, issueNumber: issueId, strings };
 	        storeData(data);
-	        const userName = await getUserName();
-	        const branchName = "translate-" + language + "-" + new Date().toISOString().replace(/[^\w]/g, "");
-	        const content = updateLanguageFile(languageFile, data);
-	        const message = `${data.language}: Apply #${data.issueNumber}`;
-	        const forkResult = await fork(userName);
-	        console.log(`created a new fork for user ${userName}`, forkResult.html_url);
-	        const branchResult = await branch(userName, branchName);
-	        console.log(`created a new branch ${branchName}`, branchResult.url);
-	        const commitResult = await commit(userName, branchName, language, content, message);
-	        console.log(`committed changes to ${language}.txt`, commitResult.commit.html_url);
+	        try {
+	            const userName = await getUserName();
+	            const branchName = "translate-" + language + "-" + new Date().toISOString().replace(/[^\w]/g, "");
+	            const content = updateLanguageFile(languageFile, data);
+	            const message = `${data.language}: Apply #${data.issueNumber}`;
+	            const forkResult = await fork(userName);
+	            console.log(`created a new fork for user ${userName}`, forkResult.html_url);
+	            const branchResult = await branch(userName, branchName);
+	            console.log(`created a new branch ${branchName}`, branchResult.url);
+	            const commitResult = await commit(userName, branchName, language, content, message);
+	            console.log(`committed changes to ${language}.txt`, commitResult.commit.html_url);
+	        }
+	        catch (error) {
+	            if (error instanceof HTTPError)
+	                logIn();
+	        }
 	    });
 	});
 

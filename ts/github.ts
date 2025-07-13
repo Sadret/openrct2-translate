@@ -12,7 +12,7 @@
 
 /* CLASSES AND TYPES */
 
-class HTTPError extends Error {
+export class HTTPError extends Error {
     constructor(public status: number, public statusText: string) {
         super(`HTTP Error ${status}: ${statusText}`);
         this.name = "HTTPError";
@@ -86,14 +86,22 @@ async function fetchURL<T>(url: string, init?: RequestInit): Promise<T> {
 
 async function fetchAPI<T>(url: string, method = "GET", body?: BodyInit): Promise<T> {
     const accessToken = sessionStorage.getItem("github_token");
-    return await fetchURL("https://api.github.com/" + url, accessToken ? {
-        method,
-        headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/vnd.github.v3+json",
-        },
-        body,
-    } : undefined);
+    try {
+        return await fetchURL("https://api.github.com/" + url, accessToken ? {
+            method,
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                Accept: "application/vnd.github.v3+json",
+            },
+            body,
+        } : undefined);
+    } catch (error) {
+        if (accessToken && error instanceof HTTPError && error.status === 401) {
+            // access token is invalid: remove and retry without
+            sessionStorage.removeItem("github_token");
+            return await fetchAPI(url, method, body);
+        } else throw error;
+    }
 }
 
 /* GITHUB FUNCTIONS */
