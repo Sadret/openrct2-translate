@@ -17,12 +17,18 @@ th {
 }
 
 td {
-    border-bottom: 1px solid #d1d9e0b3;
+    border-width: 0px 1px 1px 0px;
+    border-color: #d1d9e0b3;
+    border-style: solid;
     padding: 2px 5px;
 }
 
 .no-border td:not(:first-child) {
-    border: none;
+    border-bottom: none;
+}
+
+td:last-child {
+    border-right: none;
 }
 
 tr.removed td.content {
