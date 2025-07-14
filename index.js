@@ -10719,42 +10719,7 @@
 	        else
 	            entry.descNew = desc;
 	    });
-	    return [...strings.values()].sort((a, b) => a.strId.localeCompare(b.strId));
-	}
-
-	{
-	    // when loaded
-	    const accessToken = new URLSearchParams(window.location.search).get("access_token");
-	    if (accessToken) {
-	        sessionStorage.setItem("github_token", accessToken);
-	        const url = new URL(window.location.href);
-	        url.searchParams.delete("access_token");
-	        window.history.replaceState(null, "", String(url));
-	    }
-	}
-	function getToken() {
-	    const accessToken = sessionStorage.getItem("github_token");
-	    if (accessToken)
-	        return accessToken;
-	    const clientId = "Ov23ct0fDobJn5hdYuQ1";
-	    const redirectUri = "https://gh-oauth-handler.sadret.workers.dev/callback";
-	    const scope = "public_repo";
-	    const state = encodeURIComponent(window.location.href);
-	    window.location.href =
-	        `https://github.com/login/oauth/authorize` +
-	            `?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}` +
-	            `&scope=${encodeURIComponent(scope)}` +
-	            `&state=${state}`;
-	    return null;
-	}
-	async function ghFetch(url, oauth) {
-	    const token = getToken();
-	    return token ? fetch(url, {
-	        headers: {
-	            Authorization: `Bearer ${token}`,
-	            Accept: "application/vnd.github.v3+json",
-	        }
-	    }) : null;
+	    return strings.values().toArray().sort((a, b) => a.strId.localeCompare(b.strId));
 	}
 
 	const GITHUB_API_URL = "https://api.github.com/repos/OpenRCT2/Localisation/contents/data/language";

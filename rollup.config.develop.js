@@ -5,7 +5,7 @@ import typescript from "@rollup/plugin-typescript";
 export default [{
 	input: "./ts/index.ts",
 	output: [{
-		file: "./script.js",
+		file: "./index.js",
 		format: "iife",
 	}],
 	plugins: [
