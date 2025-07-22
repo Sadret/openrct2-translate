@@ -1,6 +1,5 @@
 import $ from "jquery";
 import { extractTranslationStringsFromIssue } from "./gh-utils";
-import { ghFetch, type GitHubIssue } from "./github";
 
 type LanguageFile = {
     name: string;

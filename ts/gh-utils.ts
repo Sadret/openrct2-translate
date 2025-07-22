@@ -1,4 +1,4 @@
-type TranslationString = {
+export type TranslationString = {
     strId: string;
     descNew?: string;
     descOld?: string;
@@ -16,7 +16,14 @@ export function extractTranslationStringsFromIssue(issue: string): TranslationSt
         else
             entry.descNew = desc;
     });
-    return [...strings.values()].sort((a, b) => a.strId.localeCompare(b.strId));
+    return strings.values().toArray().sort((a, b) => a.strId.localeCompare(b.strId));
+}
+
+export function extractTranslationStringsFromLanguageFile(languageFile: string): TranslationString[] {
+    return languageFile.matchAll(/(STR_\d{4})\s*:(.+)/g).toArray().map(match => ({
+        strId: match[1],
+        descNew: match[2],
+    }));
 }
 
 export function extractTranslationFromLanguageFile(languageFile: string, strId: string): string | null {

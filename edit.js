@@ -10719,7 +10719,13 @@
 	        else
 	            entry.descNew = desc;
 	    });
-	    return [...strings.values()].sort((a, b) => a.strId.localeCompare(b.strId));
+	    return strings.values().toArray().sort((a, b) => a.strId.localeCompare(b.strId));
+	}
+	function extractTranslationStringsFromLanguageFile(languageFile) {
+	    return languageFile.matchAll(/(STR_\d{4})\s*:(.+)/g).toArray().map(match => ({
+	        strId: match[1],
+	        descNew: match[2],
+	    }));
 	}
 	function extractTranslationFromLanguageFile(languageFile, strId) {
 	    const regex = new RegExp(`${strId}\\s*:(.+)`);
@@ -10880,16 +10886,23 @@
 	    const params = new URLSearchParams(window.location.search);
 	    const language = params.get("language");
 	    const issueId = params.get("issue");
-	    if (!language || !issueId)
+	    if (!language)
 	        return window.location.href = "/";
 	    $("#language").text(language);
-	    $("h1").text(`#${issueId}`);
-	    const issue = await getIssue(issueId).catch(e => console.log(e));
-	    if (!issue)
-	        return;
-	    $("h1").text(`#${issue.number}: ${issue.title}`);
-	    const strings = extractTranslationStringsFromIssue(issue.body);
-	    const languageFile = await fetch(`https://raw.githubusercontent.com/OpenRCT2/Localisation/master/data/language/${language}.txt`).then(res => res.text());
+	    const languageFilePromise = fetch(`https://raw.githubusercontent.com/OpenRCT2/Localisation/master/data/language/${language}.txt`).then(res => res.text());
+	    const strings = await (issueId ? async () => {
+	        $("h1").text(`#${issueId}`);
+	        const issue = await getIssue(issueId).catch(e => console.log(e));
+	        if (!issue)
+	            return [];
+	        $("h1").text(`#${issue.number}: ${issue.title}`);
+	        return extractTranslationStringsFromIssue(issue.body);
+	    } : async () => {
+	        $("h1").text("All Strings");
+	        const originalLanguageFile = await fetch(`https://raw.githubusercontent.com/OpenRCT2/OpenRCT2/develop/data/language/en-GB.txt`).then(res => res.text());
+	        return extractTranslationStringsFromLanguageFile(originalLanguageFile);
+	    })();
+	    const languageFile = await languageFilePromise;
 	    const extractTranslation = (strId) => {
 	        const stored = getTranslation(language, strId);
 	        const actual = extractTranslationFromLanguageFile(languageFile, strId);
@@ -10909,7 +10922,7 @@
 	            $("<tr>").addClass("added").append($("<td>").addClass("strId").text(str.strId).css("display", str.descOld ? "none" : ""), $("<td>").addClass("original content").text(str.descNew), $("<td>").addClass("translation content").attr("contenteditable", "true").text(extractTranslation(str.strId) || "")).appendTo("#strings tbody");
 	    });
 	    $("#save-translation").on("click", async () => {
-	        const translations = [...$("#strings tbody tr.added")].map(row => {
+	        const translations = $("#strings tbody tr.added").toArray().map(row => {
 	            const strId = $(row).find(".strId").text();
 	            const translation = $(row).find(".translation").text();
 	            setTranslation(language, strId, translation);

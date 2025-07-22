@@ -1,4 +1,3 @@
-
 // retrieve access token on page load
 {
     const accessToken = new URLSearchParams(window.location.search).get("access_token");

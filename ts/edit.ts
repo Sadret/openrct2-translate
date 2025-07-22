@@ -1,5 +1,5 @@
 import $ from "jquery";
-import { extractTranslationFromLanguageFile, extractTranslationStringsFromIssue, updateLanguageFile } from "./gh-utils";
+import { extractTranslationFromLanguageFile, extractTranslationStringsFromIssue, extractTranslationStringsFromLanguageFile, updateLanguageFile, type TranslationString } from './gh-utils';
 import { branch, commit, fork, getIssue, getUserName, HTTPError, logIn } from "./github";
 import { getTranslation, removeTranslation, setTranslation } from './storage';
 
@@ -8,19 +8,23 @@ $(async () => {
     const language = params.get("language");
     const issueId = params.get("issue");
 
-    if (!language || !issueId)
-        return window.location.href = "/";
-
+    if (!language) return window.location.href = "/";
     $("#language").text(language);
-    $("h1").text(`#${issueId}`);
+    const languageFilePromise = fetch(`https://raw.githubusercontent.com/OpenRCT2/Localisation/master/data/language/${language}.txt`).then(res => res.text());
 
-    const issue = await getIssue(issueId).catch(e => console.log(e));
-    if (!issue) return;
+    const strings: TranslationString[] = await (issueId ? async () => {
+        $("h1").text(`#${issueId}`);
+        const issue = await getIssue(issueId).catch(e => console.log(e));
+        if (!issue) return [];
+        $("h1").text(`#${issue.number}: ${issue.title}`);
+        return extractTranslationStringsFromIssue(issue.body);
+    } : async () => {
+        $("h1").text("All Strings");
+        const originalLanguageFile = await fetch(`https://raw.githubusercontent.com/OpenRCT2/OpenRCT2/develop/data/language/en-GB.txt`).then(res => res.text());
+        return extractTranslationStringsFromLanguageFile(originalLanguageFile);
+    })();
 
-    $("h1").text(`#${issue.number}: ${issue.title}`);
-
-    const strings = extractTranslationStringsFromIssue(issue.body);
-    const languageFile = await fetch(`https://raw.githubusercontent.com/OpenRCT2/Localisation/master/data/language/${language}.txt`).then(res => res.text());
+    const languageFile = await languageFilePromise;
 
     const extractTranslation = (strId: string) => {
         const stored = getTranslation(language, strId);
@@ -51,7 +55,7 @@ $(async () => {
     });
 
     $("#save-translation").on("click", async () => {
-        const translations = [...$("#strings tbody tr.added")].map<[string, string]>(row => {
+        const translations = $("#strings tbody tr.added").toArray().map<[string, string]>(row => {
             const strId = $(row).find(".strId").text();
             const translation = $(row).find(".translation").text();
             setTranslation(language, strId, translation);
