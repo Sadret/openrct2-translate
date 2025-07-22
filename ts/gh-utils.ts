@@ -1,7 +1,22 @@
+export type LanguageFile = {
+    name: string;
+    path: string;
+    type: string;
+    download_url: string;
+};
+
 export type TranslationString = {
     strId: string;
     descNew?: string;
     descOld?: string;
+}
+
+export function extractMissingLanguages(body: string): Set<string> {
+    return new Set(body.matchAll(/- \[( |x)\] ([a-z]{2}-[A-Z]{2})/g).filter(
+        match => match[1] !== "x"
+    ).map(
+        match => match[2]
+    ));
 }
 
 export function extractTranslationStringsFromIssue(issue: string): TranslationString[] {

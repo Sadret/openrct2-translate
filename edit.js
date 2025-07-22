@@ -10764,6 +10764,7 @@
 	{
 	    const accessToken = new URLSearchParams(window.location.search).get("access_token");
 	    if (accessToken) {
+	        localStorage.setItem("github_token", accessToken);
 	        sessionStorage.setItem("github_token", accessToken);
 	        const url = new URL(window.location.href);
 	        url.searchParams.delete("access_token");
@@ -10800,7 +10801,7 @@
 	    return response.json();
 	}
 	async function fetchAPI(url, method = "GET", body) {
-	    const accessToken = sessionStorage.getItem("github_token");
+	    const accessToken = localStorage.getItem("github_token") || sessionStorage.getItem("github_token");
 	    try {
 	        return await fetchURL("https://api.github.com/" + url, accessToken ? {
 	            method,
@@ -10814,7 +10815,7 @@
 	    catch (error) {
 	        if (accessToken && error instanceof HTTPError && error.status === 401) {
 	            // access token is invalid: remove and retry without
-	            sessionStorage.removeItem("github_token");
+	            localStorage.removeItem("github_token");
 	            return await fetchAPI(url, method, body);
 	        }
 	        else

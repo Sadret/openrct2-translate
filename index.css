@@ -1,8 +1,68 @@
-.language:hover {
-    background-color: #aaa;
-    cursor: pointer;
+#issue-list {
+    border: 1px solid #d1d9e0;
+    border-radius: 6px;
+    padding-bottom: 6px;
+    background-color: #f6f8fa;
 }
 
-.language.active {
-    background-color: #555;
+#issue-list>:not(#issues),
+.issue {
+    border-bottom: 1px solid #d1d9e0;
+}
+
+#issue-list div:not(.title) {
+    background-color: white;
+}
+
+#issue-list>.title {
+    font-weight: bold;
+    font-size: 1.5rem;
+    padding: 1rem;
+    box-sizing: border-box;
+}
+
+#loading {
+    padding: 0.5rem 1rem;
+    font-style: italic;
+}
+
+.issue {
+    padding: 0.5rem 1rem;
+}
+
+.issue:not(:last-child) {
+    border-bottom: 1px solid #d1d9e0;
+}
+
+.issue .header {
+    display: flex;
+    justify-content: space-between;
+    gap: 2rem;
+}
+
+.issue .header .title {
+    font-weight: bold;
+    font-size: 1.2rem;
+}
+
+.issue .header a {
+    text-align: right;
+}
+
+.issue .header a img {
+    height: 1rem;
+    vertical-align: middle;
+}
+
+.issue .languages a {
+    display: inline-block;
+    margin-left: 0.5rem;
+}
+
+.issue .languages a.done {
+    color: gray;
+}
+
+.issue .no-strings {
+    font-style: italic;
 }

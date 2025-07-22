@@ -1,4 +1,4 @@
-(function (exports) {
+(function () {
 	'use strict';
 
 	function getDefaultExportFromCjs (x) {
@@ -10707,6 +10707,9 @@
 	var jqueryExports = requireJquery();
 	var $ = /*@__PURE__*/getDefaultExportFromCjs(jqueryExports);
 
+	function extractMissingLanguages(body) {
+	    return new Set(body.matchAll(/- \[( |x)\] ([a-z]{2}-[A-Z]{2})/g).filter(match => match[1] !== "x").map(match => match[2]));
+	}
 	function extractTranslationStringsFromIssue(issue) {
 	    const strings = new Map();
 	    issue.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
@@ -10722,104 +10725,107 @@
 	    return strings.values().toArray().sort((a, b) => a.strId.localeCompare(b.strId));
 	}
 
-	const GITHUB_API_URL = "https://api.github.com/repos/OpenRCT2/Localisation/contents/data/language";
-	async function fetchLanguages() {
-	    const res = await fetch(GITHUB_API_URL);
-	    if (!res.ok)
-	        throw new Error(`GitHub API error: ${res.status}`);
-	    const data = await res.json();
-	    return data
+	// retrieve access token on page load
+	{
+	    const accessToken = new URLSearchParams(window.location.search).get("access_token");
+	    if (accessToken) {
+	        localStorage.setItem("github_token", accessToken);
+	        sessionStorage.setItem("github_token", accessToken);
+	        const url = new URL(window.location.href);
+	        url.searchParams.delete("access_token");
+	        window.history.replaceState(null, "", String(url));
+	    }
+	}
+	/* CLASSES AND TYPES */
+	class HTTPError extends Error {
+	    status;
+	    statusText;
+	    constructor(status, statusText) {
+	        super(`HTTP Error ${status}: ${statusText}`);
+	        this.status = status;
+	        this.statusText = statusText;
+	        this.name = "HTTPError";
+	    }
+	}
+	/* FETCH WRAPPERS */
+	async function fetchURL(url, init) {
+	    const response = await fetch(url, init);
+	    if (!response.ok)
+	        throw new HTTPError(response.status, response.statusText);
+	    return response.json();
+	}
+	async function fetchAPI(url, method = "GET", body) {
+	    const accessToken = localStorage.getItem("github_token") || sessionStorage.getItem("github_token");
+	    try {
+	        return await fetchURL("https://api.github.com/" + url, accessToken ? {
+	            method,
+	            headers: {
+	                Authorization: `Bearer ${accessToken}`,
+	                Accept: "application/vnd.github.v3+json",
+	            },
+	            body,
+	        } : undefined);
+	    }
+	    catch (error) {
+	        if (accessToken && error instanceof HTTPError && error.status === 401) {
+	            // access token is invalid: remove and retry without
+	            localStorage.removeItem("github_token");
+	            return await fetchAPI(url, method, body);
+	        }
+	        else
+	            throw error;
+	    }
+	}
+	async function* streamOpenIssues() {
+	    for (let page = 1; true; page++) {
+	        const issues = await fetchAPI(`repos/OpenRCT2/Localisation/issues?state=open&per_page=100&page=${page}`);
+	        if (issues.length === 0)
+	            return;
+	        for (const issue of issues)
+	            if (!issue.pull_request)
+	                yield issue;
+	    }
+	}
+	async function getLanguages() {
+	    return (await fetchAPI("repos/OpenRCT2/Localisation/contents/data/language"))
 	        .filter((file) => file.name.endsWith(".txt"))
 	        .map((file) => file.name.replace(/\.txt$/, ""));
 	}
-	const GITHUB_ISSUES_URL = "https://api.github.com/repos/OpenRCT2/Localisation/issues";
-	async function* streamOpenIssues() {
-	    const perPage = 10;
-	    let page = 1;
-	    while (true) {
-	        const url = `${GITHUB_ISSUES_URL}?state=open&per_page=${perPage}&page=${page}`;
-	        const res = await ghFetch(url);
-	        if (!res)
-	            throw new Error(`Failed to fetch issues (page ${page})`);
-	        if (!res.ok)
-	            throw new Error(`Failed to fetch issues (page ${page}): ${res.status}`);
-	        const issues = await res.json();
-	        if (issues.length === 0)
-	            break;
-	        yield issues;
-	        page++;
-	    }
-	}
-	function extractLanguageChecklist(body) {
-	    const regex = /- \[( |x)\] ([a-z]{2}-[A-Z]{2})/g;
-	    // const map: Record<string, boolean> = {};
-	    const list = [];
-	    let match;
-	    while ((match = regex.exec(body)) !== null) {
-	        const checked = match[1] === "x";
-	        const lang = match[2];
-	        if (!checked)
-	            list.push(lang);
-	        // map[lang] = checked;
-	    }
-	    // return map;
-	    return list;
-	}
-	function addLanguageCSSRules(languages) {
-	    const style = document.createElement("style");
-	    document.head.appendChild(style);
-	    const sheet = style.sheet;
+
+	$(async () => {
+	    $("#issues").addClass(`all-show`);
+	    const sheet = document.head.appendChild(document.createElement("style")).sheet;
 	    sheet.insertRule(".issue {display: none}", sheet.cssRules.length);
 	    sheet.insertRule("#issues.all-show .issue {display: inherit}", sheet.cssRules.length);
-	    for (const lang of languages)
-	        sheet.insertRule(`#issues.${lang}-show .issue.${lang} {display: inherit}`, sheet.cssRules.length);
-	}
-	$(() => {
-	    $("#issues").addClass(`all-show`);
-	    fetchLanguages().then(languages => {
-	        addLanguageCSSRules(languages);
-	        languages.forEach(language => {
-	            $("<div>")
-	                .addClass(`language ${language}`)
-	                .appendTo("#languages")
-	                .append($("<span>").text(language))
-	                .append($("<span>").addClass("count"))
-	                .on("click", function () {
-	                $(this).parent().children().removeClass("active");
-	                const off = $("#issues").hasClass(`${language}-show`);
-	                if (!off)
-	                    $(this).addClass("active");
-	                $("#issues").removeClass();
-	                $("#issues").addClass(off ? "all-show" : `${language}-show`);
-	            });
-	        });
-	        (async () => {
-	            for await (const issues of streamOpenIssues()) {
-	                issues.filter(issue => !issue.pull_request).forEach(issue => {
-	                    const missingLanguages = extractLanguageChecklist(issue.body);
-	                    $("<details>")
-	                        .addClass("issue")
-	                        .addClass(missingLanguages.join(" "))
-	                        .appendTo("#issues")
-	                        .append($("<summary>").append($("<a>")
-	                        .attr("href", issue.html_url)
-	                        .text(`#${issue.number}`), $("<span>").text(` ${issue.title} (`), $("<span>").css("display", "inline-flex").css("gap", "0.5em").append(missingLanguages.map(language => $("<a>")
-	                        .addClass(language)
-	                        .text(language)
-	                        .attr("href", `edit.html?language=${language}&issue=${issue.number}`))), $("<span>").text(`)`)), extractTranslationStringsFromIssue(issue.body).map(str => $("<pre>").text(str.descNew || str.descOld || "")));
-	                });
-	                languages.forEach(language => {
-	                    const count = $(`#issues .issue.${language}`).length;
-	                    if (count)
-	                        $(`#languages .${language} .count`).text(` (${count})`);
-	                });
-	            }
-	        })();
+	    $("#language-select").on("change", function () { $("#issues").removeClass().addClass(`${$(this).val()}-show`); });
+	    const languages = await getLanguages();
+	    languages.forEach(language => {
+	        sheet.insertRule(`#issues.${language}-show .issue.${language} {display: inherit}`, sheet.cssRules.length);
+	        sheet.insertRule(`#issues.${language}-show .issue .languages .${language} {font-weight: bold}`, sheet.cssRules.length);
+	        $("#language-select").append($("<option>")
+	            .attr("value", language)
+	            .append(`${language} (`, $("<span>")
+	            .addClass(language)
+	            .addClass("count")
+	            .text($("#issues").find(`.issue.${language}`).length), `)`));
 	    });
+	    for await (const issue of streamOpenIssues()) {
+	        const missingLanguages = extractMissingLanguages(issue.body);
+	        $("<div>")
+	            .addClass("issue")
+	            .addClass(Array.from(missingLanguages).join(" "))
+	            .appendTo("#issues")
+	            .append($("<div>").addClass("header").append($("<span>").addClass("title").text(`#${issue.number} ${issue.title}`), $("<a>")
+	            .attr("href", issue.html_url)
+	            .attr("target", "_blank")
+	            .append("Open issue on GitHub ↗", $("<img>").attr("src", "github-mark.png"))), $("<div>").append("Edit language: ", $("<span>").addClass("languages").append(languages.map(language => $("<a>")
+	            .addClass(language)
+	            .addClass(missingLanguages.has(language) ? "" : "done")
+	            .text(language)
+	            .attr("href", `edit.html?language=${language}&issue=${issue.number}`)))), (strings => strings.length ? $("<details>").append($("<summary>").text("Strings"), strings.map(str => $("<pre>").text(`${str.strId}: ${str.descNew || str.descOld || ""}`))) : $("<div>").addClass("no-strings").text("no strings found"))(extractTranslationStringsFromIssue(issue.body)));
+	        missingLanguages.forEach(language => (span => span.text(Number(span.text()) + 1))($(`option .${language}.count`)));
+	    }
+	    $("#loading").remove();
 	});
 
-	exports.streamOpenIssues = streamOpenIssues;
-
-	return exports;
-
-})({});
+})();

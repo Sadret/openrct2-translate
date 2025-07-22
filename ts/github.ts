@@ -1,7 +1,9 @@
+
 // retrieve access token on page load
 {
     const accessToken = new URLSearchParams(window.location.search).get("access_token");
     if (accessToken) {
+        localStorage.setItem("github_token", accessToken);
         sessionStorage.setItem("github_token", accessToken);
         const url = new URL(window.location.href);
         url.searchParams.delete("access_token");
@@ -50,6 +52,7 @@ type GitHubRef = {
 };
 
 type GitHubFile = {
+    name: string;
     sha: string;
     content: string;
 };
@@ -84,7 +87,7 @@ async function fetchURL<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 async function fetchAPI<T>(url: string, method = "GET", body?: BodyInit): Promise<T> {
-    const accessToken = sessionStorage.getItem("github_token");
+    const accessToken = localStorage.getItem("github_token") || sessionStorage.getItem("github_token");
     try {
         return await fetchURL("https://api.github.com/" + url, accessToken ? {
             method,
@@ -97,7 +100,7 @@ async function fetchAPI<T>(url: string, method = "GET", body?: BodyInit): Promis
     } catch (error) {
         if (accessToken && error instanceof HTTPError && error.status === 401) {
             // access token is invalid: remove and retry without
-            sessionStorage.removeItem("github_token");
+            localStorage.removeItem("github_token");
             return await fetchAPI(url, method, body);
         } else throw error;
     }
@@ -124,6 +127,24 @@ export async function getUserName(): Promise<string> {
 
 export async function getIssue(issueId: string): Promise<GitHubIssue> {
     return await fetchAPI(`repos/OpenRCT2/Localisation/issues/${issueId}`);
+}
+
+export async function* streamOpenIssues(): AsyncGenerator<GitHubIssue> {
+    for (let page = 1; true; page++) {
+        const issues = await fetchAPI<GitHubIssue[]>(`repos/OpenRCT2/Localisation/issues?state=open&per_page=100&page=${page}`);
+
+        if (issues.length === 0) return;
+
+        for (const issue of issues)
+            if (!issue.pull_request)
+                yield issue;
+    }
+}
+
+export async function getLanguages(): Promise<string[]> {
+    return (await fetchAPI<GitHubFile[]>("repos/OpenRCT2/Localisation/contents/data/language"))
+        .filter((file) => file.name.endsWith(".txt"))
+        .map((file) => file.name.replace(/\.txt$/, ""));
 }
 
 export async function fork(username: string): Promise<GitHubRepository> {
