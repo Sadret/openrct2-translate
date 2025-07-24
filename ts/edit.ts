@@ -1,9 +1,18 @@
 import $ from "jquery";
 import { extractTranslationFromLanguageFile, extractTranslationStringsFromIssue, extractTranslationStringsFromLanguageFile, updateLanguageFile, type TranslationString } from './gh-utils';
-import { branch, commit, fork, getIssue, getUserName, HTTPError, logIn } from "./github";
+import { branch, commit, fork, getIssue, getUserName } from "./github";
+import { showOverlay } from "./overlay";
 import { getTranslation, removeTranslation, setTranslation } from './storage';
 
 $(async () => {
+    try {
+        await init();
+    } catch (error) {
+        showOverlay(error, true);
+    }
+});
+
+async function init() {
     const params = new URLSearchParams(window.location.search);
     const language = params.get("language");
     const issueId = params.get("issue");
@@ -14,7 +23,7 @@ $(async () => {
 
     const strings: TranslationString[] = await (issueId ? async () => {
         $("h1").text(`#${issueId}`);
-        const issue = await getIssue(issueId).catch(e => console.log(e));
+        const issue = await getIssue(issueId);
         if (!issue) return [];
         $("h1").text(`#${issue.number}: ${issue.title}`);
         return extractTranslationStringsFromIssue(issue.body);
@@ -77,8 +86,7 @@ $(async () => {
             const commitResult = await commit(userName, branchName, language, content, message);
             console.log(`committed changes to ${language}.txt`, commitResult.commit.html_url);
         } catch (error) {
-            if (error instanceof HTTPError)
-                logIn();
+            showOverlay(error, false);
         }
     });
-});
+};

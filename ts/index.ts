@@ -1,8 +1,17 @@
 import $ from "jquery";
 import { extractMissingLanguages, extractTranslationStringsFromIssue } from "./gh-utils";
 import { getLanguages, streamOpenIssues } from "./github";
+import { showOverlay } from "./overlay";
 
 $(async () => {
+    try {
+        await init();
+    } catch (error) {
+        showOverlay(error, true);
+    }
+});
+
+async function init() {
     $("#issues").addClass(`all-show`);
 
     const sheet = document.head.appendChild(document.createElement("style")).sheet as CSSStyleSheet;
@@ -66,4 +75,4 @@ $(async () => {
         missingLanguages.forEach(language => (span => span.text(Number(span.text()) + 1))($(`option .${language}.count`)));
     }
     $("#loading").remove();
-});
+}

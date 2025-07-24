@@ -13,8 +13,23 @@
 
 /* CLASSES AND TYPES */
 
+type RateLimit = {
+    limit: number;
+    remaining: number;
+    reset: number;
+    resource: string;
+    used: number;
+}
+
+export class GitHubError extends Error {
+    constructor(public authenticated: boolean, public rateLimit: RateLimit) {
+        super(`GitHub Error [authenticated: ${authenticated}, ${Object.entries(rateLimit).map(([key, value]) => `${key}: ${value}`).join(", ")}]`);
+        this.name = "GitHubError";
+    }
+}
+
 export class HTTPError extends Error {
-    constructor(public status: number, public statusText: string) {
+    constructor(public status: number, public statusText: string, public headers: Headers) {
         super(`HTTP Error ${status}: ${statusText}`);
         this.name = "HTTPError";
     }
@@ -82,7 +97,8 @@ function utf8ToBase64Safe(str: string): string {
 
 async function fetchURL<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await fetch(url, init);
-    if (!response.ok) throw new HTTPError(response.status, response.statusText);
+    if (!response.ok)
+        throw new HTTPError(response.status, response.statusText, response.headers);
     return response.json() as T;
 }
 
@@ -98,17 +114,35 @@ async function fetchAPI<T>(url: string, method = "GET", body?: BodyInit): Promis
             body,
         } : undefined);
     } catch (error) {
-        if (accessToken && error instanceof HTTPError && error.status === 401) {
-            // access token is invalid: remove and retry without
-            localStorage.removeItem("github_token");
-            return await fetchAPI(url, method, body);
-        } else throw error;
+        if (!(error instanceof HTTPError))
+            // propagate as unknown Error
+            throw error;
+        switch (true) {
+            case accessToken && error.status === 401:
+                // access token is invalid: remove and retry without
+                localStorage.removeItem("github_token");
+                sessionStorage.removeItem("github_token");
+                return await fetchAPI(url, method, body);
+            case error.status === 401:
+            case error.status === 403 && Number(error.headers.get("X-RateLimit-Remaining")) === 0:
+                // propagate as GitHubError
+                throw new GitHubError(Boolean(accessToken), {
+                    limit: Number(error.headers.get("X-RateLimit-Limit")),
+                    remaining: Number(error.headers.get("X-RateLimit-Remaining")),
+                    reset: Number(error.headers.get("X-RateLimit-Reset")),
+                    resource: String(error.headers.get("X-RateLimit-Resource")),
+                    used: Number(error.headers.get("X-RateLimit-Used")),
+                });
+            default:
+                // propagate as unknown HTTPError
+                throw error;
+        }
     }
 }
 
 /* GITHUB FUNCTIONS */
 
-export function logIn(): void {
+export function login(force = false): void {
     const clientId = "Ov23ct0fDobJn5hdYuQ1";
     const redirectUri = "https://gh-oauth-handler.sadret.workers.dev/callback";
     const scope = "public_repo";
@@ -118,7 +152,8 @@ export function logIn(): void {
         `https://github.com/login/oauth/authorize` +
         `?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&scope=${encodeURIComponent(scope)}` +
-        `&state=${state}`;
+        `&state=${state}` +
+        (force ? "&prompt=login" : "");
 }
 
 export async function getUserName(): Promise<string> {
