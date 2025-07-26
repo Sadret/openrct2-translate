@@ -12,13 +12,9 @@ $(async () => {
 });
 
 async function init() {
-    $("#issues").addClass(`all-show`);
-
     const sheet = document.head.appendChild(document.createElement("style")).sheet as CSSStyleSheet;
     sheet.insertRule(".issue {display: none}", sheet.cssRules.length);
     sheet.insertRule("#issues.all-show .issue {display: inherit}", sheet.cssRules.length);
-
-    $("#language-select").on("change", function () { $("#issues").removeClass().addClass(`${$(this).val()}-show`); });
 
     const languages = await getLanguages();
     languages.forEach(language => {
@@ -27,6 +23,7 @@ async function init() {
         $("#language-select").append(
             $("<option>")
                 .attr("value", language)
+                .prop("selected", language === location.hash.slice(1))
                 .append(
                     `${language} (`,
                     $("<span>")
@@ -37,6 +34,10 @@ async function init() {
                 ),
         );
     });
+    $("#language-select").on("change", function () {
+        $("#issues").removeClass().addClass(`${$(this).val()}-show`);
+        location.hash = String($(this).val());
+    }).trigger("change");
 
     for await (const issue of streamOpenIssues()) {
         const missingLanguages = extractMissingLanguages(issue.body);
