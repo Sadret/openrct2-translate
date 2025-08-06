@@ -25,7 +25,20 @@ async function init() {
         $("h1").text(`#${issueId}`);
         const issue = await getIssue(issueId);
         if (!issue) return [];
-        $("h1").text(`#${issue.number}: ${issue.title}`);
+        $("h1")
+            .text(`#${issue.number}: ${issue.title}`)
+            .after(
+                $("<p>").append($("<details>").append(
+                    $("<summary>").append(
+                        "Issue Description",
+                        $("<a>")
+                            .attr("href", issue.html_url)
+                            .attr("target", "_blank")
+                            .append("Open issue on GitHub ↗", $("<img>").attr("src", "github-mark.png")),
+                    ),
+                    $("<pre>").text(issue.body),
+                )),
+            );
         return extractTranslationStringsFromIssue(issue.body);
     } : async () => {
         $("h1").text("All Strings");

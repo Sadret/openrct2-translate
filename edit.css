@@ -1,3 +1,16 @@
+summary a {
+    margin-left: 1rem;
+}
+
+summary a img{
+    height: 1rem;
+    vertical-align: middle;
+}
+
+pre{
+    white-space: pre-wrap;
+}
+
 table {
     border-spacing: 0;
     border: 1px solid #d1d9e0;
