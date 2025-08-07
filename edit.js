@@ -10897,6 +10897,15 @@
 	        sha,
 	    }));
 	}
+	async function createPR(userName, title, body, branchName, draft = false) {
+	    return await fetchAPI(`repos/${userName}/Localisation/pulls`, "POST", JSON.stringify({
+	        title,
+	        body,
+	        head: `${userName}:${branchName}`,
+	        base: "master",
+	        draft,
+	    }));
+	}
 
 	function getDurationString(seconds) {
 	    const minutes = Math.round(seconds / 60);
@@ -10982,19 +10991,19 @@
 	}
 
 	$(async () => {
-	    try {
-	        await init();
-	    }
-	    catch (error) {
-	        showOverlay(error, true);
-	    }
-	});
-	async function init() {
 	    const params = new URLSearchParams(window.location.search);
 	    const language = params.get("language");
 	    const issueId = params.get("issue");
 	    if (!language)
 	        return window.location.href = "/";
+	    try {
+	        await init(language, issueId);
+	    }
+	    catch (error) {
+	        showOverlay(error, true);
+	    }
+	});
+	async function init(language, issueId) {
 	    $("#language").text(language);
 	    const languageFilePromise = fetch(`https://raw.githubusercontent.com/OpenRCT2/Localisation/master/data/language/${language}.txt`).then(res => res.text());
 	    const strings = await (issueId ? async () => {
@@ -11033,29 +11042,65 @@
 	        if (str.descNew)
 	            $("<tr>").addClass("added").append($("<td>").addClass("strId").text(str.strId).css("display", str.descOld ? "none" : ""), $("<td>").addClass("original content").text(str.descNew), $("<td>").addClass("translation content").attr("contenteditable", "true").text(extractTranslation(str.strId) || "")).appendTo("#strings tbody");
 	    });
-	    $("#save-translation").on("click", async () => {
+	    async function trigger(actions) {
 	        const translations = $("#strings tbody tr.added").toArray().map(row => {
 	            const strId = $(row).find(".strId").text();
 	            const translation = $(row).find(".translation").text();
 	            setTranslation(language, strId, translation);
 	            return [strId, translation];
 	        });
+	        addToLog(`saved changes locally`);
+	        if (actions === 0 /* Actions.SAVE */)
+	            return;
 	        try {
+	            const now = new Date().toISOString();
 	            const userName = await getUserName();
-	            const branchName = "translate-" + language + "-" + new Date().toISOString().replace(/[^\w]/g, "");
+	            const branchName = "translate-" + language + "-" + now.replace(/[^\w]/g, "");
 	            const content = updateLanguageFile(languageFile, translations);
 	            const message = `${language}: Apply #${issueId}`;
 	            const forkResult = await fork(userName);
-	            console.log(`created a new fork for user ${userName}`, forkResult.html_url);
+	            if (now <= forkResult.created_at)
+	                addToLog(`created a new fork for user ${userName}`, forkResult.html_url);
+	            else
+	                addToLog(`fork already exists for user ${userName}`, forkResult.html_url);
 	            const branchResult = await branch(userName, branchName);
-	            console.log(`created a new branch ${branchName}`, branchResult.url);
+	            addToLog(`created a new branch ${branchName}`, `https://github.com/${userName}/Localisation/tree/${branchName}`);
 	            const commitResult = await commit(userName, branchName, language, content, message);
-	            console.log(`committed changes to ${language}.txt`, commitResult.commit.html_url);
+	            addToLog(`committed changes to ${language}.txt`, commitResult.commit.html_url);
+	            if (actions === 1 /* Actions.COMMIT */)
+	                return;
+	            const title = message;
+	            const body = `Applying for issue:\n- #${issueId}`;
+	            const draft = actions === 2 /* Actions.DRAFT_PR */;
+	            const prResult = await createPR(userName, title, body, branchName, draft);
+	            addToLog(`${draft ? "drafted" : "created"} pull request against OpenRCT2/Localisation`, prResult.html_url);
 	        }
 	        catch (error) {
 	            showOverlay(error, false);
 	        }
+	    }
+	    $("#btn-save").on("click", () => {
+	        addToLog("user triggered action: save locally");
+	        trigger(0 /* Actions.SAVE */);
 	    });
+	    $("#btn-commit").on("click", () => {
+	        addToLog("user triggered action: save locally & commit changes");
+	        trigger(1 /* Actions.COMMIT */);
+	    });
+	    $("#btn-draft-pr").on("click", () => {
+	        addToLog("user triggered action: save locally & commit changes & draft pull request");
+	        trigger(2 /* Actions.DRAFT_PR */);
+	    });
+	    $("#btn-create-pr").on("click", () => {
+	        addToLog("user triggered action: save locally & commit changes & create pull request");
+	        trigger(3 /* Actions.CREATE_PR */);
+	    });
+	}
+	function addToLog(message, url) {
+	    const line = $("<div>").text(`${new Date().toLocaleString()} ${message}`);
+	    if (url)
+	        line.append($("<a>").attr("href", url).attr("target", "_blank").append("(open on GitHub ↗", $("<img>").attr("src", "github-mark.png"), ")"));
+	    $("#log").append(line).scrollTop($("#log")[0].scrollHeight);
 	}
 
 })();

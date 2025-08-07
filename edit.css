@@ -1,8 +1,8 @@
-summary a {
+summary a, #log a {
     margin-left: 1rem;
 }
 
-summary a img{
+a img{
     height: 1rem;
     vertical-align: middle;
 }
@@ -81,4 +81,14 @@ tr.added td.content {
     content: "Type here...";
     color: #aaa;
     pointer-events: none;
+}
+
+#log{
+    width: 100%;
+    height: 10rem;
+    border :1px solid gray;
+    padding: 0.25rem;
+    box-sizing: border-box;
+    overflow: auto;
+    font-family: Consolas, monospace;
 }

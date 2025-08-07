@@ -1,23 +1,24 @@
 import $ from "jquery";
 import { extractTranslationFromLanguageFile, extractTranslationStringsFromIssue, extractTranslationStringsFromLanguageFile, updateLanguageFile, type TranslationString } from './gh-utils';
-import { branch, commit, fork, getIssue, getUserName } from "./github";
+import { branch, commit, createPR, fork, getIssue, getUserName } from "./github";
 import { showOverlay } from "./overlay";
 import { getTranslation, removeTranslation, setTranslation } from './storage';
 
 $(async () => {
-    try {
-        await init();
-    } catch (error) {
-        showOverlay(error, true);
-    }
-});
-
-async function init() {
     const params = new URLSearchParams(window.location.search);
     const language = params.get("language");
     const issueId = params.get("issue");
 
     if (!language) return window.location.href = "/";
+
+    try {
+        await init(language, issueId);
+    } catch (error) {
+        showOverlay(error, true);
+    }
+});
+
+async function init(language: string, issueId: string | null) {
     $("#language").text(language);
     const languageFilePromise = fetch(`https://raw.githubusercontent.com/OpenRCT2/Localisation/master/data/language/${language}.txt`).then(res => res.text());
 
@@ -76,30 +77,70 @@ async function init() {
             ).appendTo("#strings tbody");
     });
 
-    $("#save-translation").on("click", async () => {
+    const enum Actions { SAVE, COMMIT, DRAFT_PR, CREATE_PR };
+        
+    async function trigger(actions: Actions) {
         const translations = $("#strings tbody tr.added").toArray().map<[string, string]>(row => {
             const strId = $(row).find(".strId").text();
             const translation = $(row).find(".translation").text();
             setTranslation(language, strId, translation);
             return [strId, translation];
         });
+        addToLog(`saved changes locally`);
+
+        if (actions === Actions.SAVE) return;
 
         try {
+            const now = new Date().toISOString();
             const userName = await getUserName();
-            const branchName = "translate-" + language + "-" + new Date().toISOString().replace(/[^\w]/g, "");
+            const branchName = "translate-" + language + "-" + now.replace(/[^\w]/g, "");
             const content = updateLanguageFile(languageFile, translations);
             const message = `${language}: Apply #${issueId}`;
 
             const forkResult = await fork(userName);
-            console.log(`created a new fork for user ${userName}`, forkResult.html_url);
+            if (now <= forkResult.created_at)
+                addToLog(`created a new fork for user ${userName}`, forkResult.html_url);
+            else
+                addToLog(`fork already exists for user ${userName}`, forkResult.html_url);
 
             const branchResult = await branch(userName, branchName);
-            console.log(`created a new branch ${branchName}`, branchResult.url);
-
+            addToLog(`created a new branch ${branchName}`, `https://github.com/${userName}/Localisation/tree/${branchName}`);
+            
             const commitResult = await commit(userName, branchName, language, content, message);
-            console.log(`committed changes to ${language}.txt`, commitResult.commit.html_url);
+            addToLog(`committed changes to ${language}.txt`, commitResult.commit.html_url);
+
+            if(actions === Actions.COMMIT) return;
+
+            const title = message;
+            const body = `Applying for issue:\n- #${issueId}`;
+            const draft = actions === Actions.DRAFT_PR;
+            const prResult = await createPR(userName, title, body, branchName, draft);
+            addToLog(`${draft ? "drafted" : "created"} pull request against OpenRCT2/Localisation`, prResult.html_url);
         } catch (error) {
             showOverlay(error, false);
         }
+    }
+
+    $("#btn-save").on("click", () => {
+        addToLog("user triggered action: save locally");
+        trigger(Actions.SAVE);
+    });
+    $("#btn-commit").on("click", () => {
+        addToLog("user triggered action: save locally & commit changes");
+        trigger(Actions.COMMIT);
+    });
+    $("#btn-draft-pr").on("click", () => {
+        addToLog("user triggered action: save locally & commit changes & draft pull request");
+        trigger(Actions.DRAFT_PR);
+    });
+    $("#btn-create-pr").on("click", () => {
+        addToLog("user triggered action: save locally & commit changes & create pull request");
+        trigger(Actions.CREATE_PR);
     });
 };
+
+function addToLog(message: string, url?: string) {
+    const line = $("<div>").text(`${new Date().toLocaleString()} ${message}`);
+    if(url) line.append($("<a>").attr("href", url).attr("target", "_blank").append("(open on GitHub ↗", $("<img>").attr("src", "github-mark.png"), ")"));
+    $("#log").append(line).scrollTop($("#log")[0].scrollHeight);
+}

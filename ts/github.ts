@@ -49,6 +49,7 @@ type GitHubIssue = {
 
 type GitHubRepository = {
     html_url: string;
+    created_at: string;
 };
 
 type GitHubBranch = {
@@ -76,6 +77,10 @@ type GitHubCommit = {
     commit: {
         html_url: string;
     };
+};
+
+type GitHubPR = {
+    html_url: string;
 };
 
 /* HELPER FUNCTIONS */
@@ -212,5 +217,15 @@ export async function commit(userName: string, branchName: string, language: str
         message,
         branch: branchName,
         sha,
+    }));
+}
+
+export async function createPR(userName: string, title: string, body: string, branchName: string, draft = false): Promise<GitHubPR> {
+    return await fetchAPI<GitHubPR>(`repos/${userName}/Localisation/pulls`, "POST", JSON.stringify({
+        title,
+        body,
+        head: `${userName}:${branchName}`,
+        base: "master",
+        draft,
     }));
 }
