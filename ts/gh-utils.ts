@@ -79,3 +79,9 @@ export function updateLanguageFile(languageFile: string, translations: [string, 
     return out.join("\n");
 }
 
+export function getLanguageNames(languageCpp: string): Map<string, string> {
+    return new Map(
+        languageCpp.matchAll(/(\w\w-\w\w)", "([^"]+)", *(u8)?"([^"]+)/g)
+            .map(([_, langId, langEnglish, _langNative]) => ([langId, langEnglish]))
+    );
+}

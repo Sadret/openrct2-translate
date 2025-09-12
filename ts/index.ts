@@ -1,5 +1,5 @@
 import $ from "jquery";
-import { extractMissingLanguages, extractTranslationStringsFromIssue } from "./gh-utils";
+import { extractMissingLanguages, extractTranslationStringsFromIssue, getLanguageNames } from "./gh-utils";
 import { getLanguages, streamOpenIssues } from "./github";
 import { showOverlay } from "./overlay";
 
@@ -22,14 +22,13 @@ async function init() {
         sheet.insertRule(`#issues.${language}-show .issue .languages .${language} {font-weight: bold}`, sheet.cssRules.length);
         $("#language-select").append(
             $("<option>")
+                .addClass(language)
                 .attr("value", language)
                 .prop("selected", language === location.hash.slice(1))
                 .append(
-                    `${language} (`,
-                    $("<span>")
-                        .addClass(language)
-                        .addClass("count")
-                        .text($("#issues").find(`.issue.${language}`).length),
+                    $("<span>").addClass("name").text(language),
+                    ` (`,
+                    $("<span>").addClass("count").text($("#issues").find(`.issue.${language}`).length),
                     `)`,
                 ),
         );
@@ -38,6 +37,14 @@ async function init() {
         $("#issues").removeClass().addClass(`${$(this).val()}-show`);
         location.hash = String($(this).val());
     }).trigger("change");
+    fetch(`https://raw.githubusercontent.com/OpenRCT2/OpenRCT2/develop/src/openrct2/localisation/Language.cpp`)
+        .then(res => res.text())
+        .then(languageCpp => getLanguageNames(languageCpp).forEach(
+            (langEnglish, langId) => $(`option.${langId} span.name`).text(langEnglish)
+        )).then(() => {
+            const options = $("#language-select").children().toArray().sort((a, b) => $(a).text().localeCompare($(b).text()));
+            $("#language-select").empty().append(options);
+        });
 
     for await (const issue of streamOpenIssues()) {
         const missingLanguages = extractMissingLanguages(issue.body);
@@ -73,7 +80,7 @@ async function init() {
                 ) : $("<div>").addClass("no-strings").text("no strings found")
                 )(extractTranslationStringsFromIssue(issue.body)),
             );
-        missingLanguages.forEach(language => (span => span.text(Number(span.text()) + 1))($(`option .${language}.count`)));
+        missingLanguages.forEach(language => (span => span.text(Number(span.text()) + 1))($(`option.${language} span.count`)));
     }
     $("#loading").remove();
 }
