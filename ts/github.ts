@@ -187,6 +187,16 @@ export async function getLanguages(): Promise<string[]> {
         .map((file) => file.name.replace(/\.txt$/, ""));
 }
 
+export async function getLanguageNames(): Promise<Map<string, string>> {
+    return new Map(
+        (await (
+            await fetch(`https://raw.githubusercontent.com/OpenRCT2/OpenRCT2/develop/src/openrct2/localisation/Language.cpp`)
+        ).text())
+            .matchAll(/(\w\w-\w\w)", "([^"]+)", *(u8)?"([^"]+)/g)
+            .map(([_, langId, langEnglish, _langNative]) => ([langId, langEnglish]))
+    );
+}
+
 export async function fork(username: string): Promise<GitHubRepository> {
     await fetchAPI("repos/OpenRCT2/Localisation/forks", "POST");
 

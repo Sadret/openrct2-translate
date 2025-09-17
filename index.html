@@ -13,16 +13,28 @@
 
 <body>
     <h1>OpenRCT2 Translation Helper</h1>
-    <p>
-        show issues for language:
-        <select id="language-select">
-            <option value="all">-- all --</option>
-        </select>
-    </p>
-    <div id="issue-list">
-        <div class="title">Open Issues</div>
-        <div id="issues"></div>
-        <div id="loading">loading issues...</div>
+    <div id="language-selection" class="box">
+        <div class="header">
+            <span class="title">1. Choose Language:</span>
+            <select id="languages">
+                <option value="none"></option>
+            </select>
+        </div>
+    </div>
+    <br />
+    <div id="issue-selection" class="box">
+        <div class="header">
+            <span class="title">2. Choose Issue:</span>
+            <span id="filter">
+                <label for="hideEmpty">Hide issues with no strings</label>
+                <input type="checkbox" id="hideEmpty" checked />
+            </span>
+        </div>
+        <div class="content">
+            <div id="empty">No issues found.</div>
+            <div id="issues"></div>
+            <div id="loading">Loading issues...</div>
+        </div>
     </div>
 </body>
 

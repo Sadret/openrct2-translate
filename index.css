@@ -1,27 +1,72 @@
-#issue-list {
+.box {
     border: 1px solid #d1d9e0;
     border-radius: 6px;
     padding-bottom: 6px;
     background-color: #f6f8fa;
 }
 
-#issue-list>:not(#issues),
+.box>.header {
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+}
+
+.box>:not(.header) {
+    background-color: white;
+}
+
+.title {
+    font-weight: bold;
+    font-size: 1.5rem;
+}
+
+.box>:not(:last-child),
 .issue {
     border-bottom: 1px solid #d1d9e0;
 }
 
-#issue-list div:not(.title) {
+#language-selection select {
+    min-width: 16rem;
+}
+
+#issue-selection .content {
+    min-height: 3rem;
+}
+
+#issue-selection .content>div {
+    position: relative;
     background-color: white;
 }
 
-#issue-list>.title {
-    font-weight: bold;
-    font-size: 1.5rem;
-    padding: 1rem;
-    box-sizing: border-box;
+#issue-selection:has(#hideEmpty:checked) .issue:has(.no-strings) {
+    display: none;
 }
 
-#loading {
+.issue button {
+    width: 12rem;
+    cursor: pointer;
+}
+
+body:has(option[value="none"]:checked) .issue button.actual {
+    display: none;
+}
+
+body:not(:has(option[value="none"]:checked)) .issue button.dummy {
+    display: none;
+}
+
+#filter {
+    margin-top: auto;
+    margin-bottom: auto;
+}
+
+#empty {
+    position: absolute !important;
+}
+
+#loading,
+#empty {
     padding: 0.5rem 1rem;
     font-style: italic;
 }
@@ -30,11 +75,8 @@
     padding: 0.5rem 1rem;
 }
 
-.issue:not(:last-child) {
-    border-bottom: 1px solid #d1d9e0;
-}
-
-.issue .header {
+.issue .header,
+.issue .header>span {
     display: flex;
     justify-content: space-between;
     gap: 2rem;
