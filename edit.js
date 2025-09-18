@@ -10760,17 +10760,7 @@
 	    return out.join("\n");
 	}
 
-	// retrieve access token on page load
-	{
-	    const accessToken = new URLSearchParams(window.location.search).get("access_token");
-	    if (accessToken) {
-	        localStorage.setItem("github_token", accessToken);
-	        sessionStorage.setItem("github_token", accessToken);
-	        const url = new URL(window.location.href);
-	        url.searchParams.delete("access_token");
-	        window.history.replaceState(null, "", String(url));
-	    }
-	}
+	/* CLASSES AND TYPES */
 	class GitHubError extends Error {
 	    authenticated;
 	    rateLimit;
@@ -10811,17 +10801,16 @@
 	        throw new HTTPError(response.status, response.statusText, response.headers);
 	    return response.json();
 	}
-	async function fetchAPI(url, method = "GET", body) {
-	    const accessToken = localStorage.getItem("github_token") || sessionStorage.getItem("github_token");
+	async function fetchAPI(url, method = "GET", accessToken, body) {
 	    try {
-	        return await fetchURL("https://api.github.com/" + url, accessToken ? {
+	        return await fetchURL("https://api.github.com/" + url, {
 	            method,
 	            headers: {
-	                Authorization: `Bearer ${accessToken}`,
 	                Accept: "application/vnd.github.v3+json",
+	                ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
 	            },
 	            body,
-	        } : undefined);
+	        });
 	    }
 	    catch (error) {
 	        if (!(error instanceof HTTPError))
@@ -10829,10 +10818,8 @@
 	            throw error;
 	        switch (true) {
 	            case accessToken && error.status === 401:
-	                // access token is invalid: remove and retry without
-	                localStorage.removeItem("github_token");
-	                sessionStorage.removeItem("github_token");
-	                return await fetchAPI(url, method, body);
+	                // access token is invalid: retry without (most likely fails with 403)
+	                return await fetchAPI(url, method, undefined, body);
 	            case error.status === 401:
 	            case error.status === 403 && Number(error.headers.get("X-RateLimit-Remaining")) === 0:
 	                // propagate as GitHubError
@@ -10865,30 +10852,30 @@
 	async function getUserName() {
 	    return (await fetchAPI("user")).login;
 	}
-	async function getIssue(issueId) {
-	    return await fetchAPI(`repos/OpenRCT2/Localisation/issues/${issueId}`);
+	async function getIssue(user, repository, issueId) {
+	    return await fetchAPI(`repos/${user}/${repository}/issues/${issueId}`);
 	}
-	async function fork(username) {
-	    await fetchAPI("repos/OpenRCT2/Localisation/forks", "POST");
+	async function fork(user, repository, username) {
+	    await fetchAPI(`repos/${user}/${repository}/forks`, "POST");
 	    // Wait until the fork is visible
 	    for (let i = 0; i < 10; i++)
 	        try {
-	            return await fetchAPI(`repos/${username}/Localisation`);
+	            return await fetchAPI(`repos/${username}/${repository}`);
 	        }
 	        catch {
 	            await new Promise(r => setTimeout(r, 10 << i));
 	        }
 	    throw new Error(); // unknown error: cannot create or retrieve fork
 	}
-	async function branch(userName, branchName) {
-	    const baseSHA = (await fetchAPI("repos/OpenRCT2/Localisation/git/ref/heads/master")).object.sha;
-	    return await fetchAPI(`repos/${userName}/Localisation/git/refs`, "POST", JSON.stringify({
+	async function branch(user, repository, userName, branchName) {
+	    const baseSHA = (await fetchAPI(`repos/${user}/${repository}/git/ref/heads/master`)).object.sha;
+	    return await fetchAPI(`repos/${userName}/${repository}/git/refs`, "POST", JSON.stringify({
 	        ref: `refs/heads/${branchName}`,
 	        sha: baseSHA,
 	    }));
 	}
-	async function commit(userName, branchName, language, content, message) {
-	    const filePath = `repos/${userName}/Localisation/contents/data/language/${language}.txt`;
+	async function commit(userName, repository, branchName, language, content, message) {
+	    const filePath = `repos/${userName}/${repository}/contents/data/language/${language}.txt`;
 	    const sha = (await fetchAPI(`${filePath}?ref=${branchName}`)).sha;
 	    return await fetchAPI(filePath, "PUT", JSON.stringify({
 	        content: utf8ToBase64Safe(content),
@@ -10898,7 +10885,7 @@
 	    }));
 	}
 	async function createPR(userName, title, body, branchName, draft = false) {
-	    return await fetchAPI(`repos/${userName}/Localisation/pulls`, "POST", JSON.stringify({
+	    return await fetchAPI(`repos/${userName}/${repository}/pulls`, "POST", JSON.stringify({
 	        title,
 	        body,
 	        head: `${userName}:${branchName}`,

@@ -1,3 +1,7 @@
+/*
+ * TYPES
+ */
+
 export type LanguageFile = {
     name: string;
     path: string;
@@ -9,6 +13,30 @@ export type TranslationString = {
     strId: string;
     descNew?: string;
     descOld?: string;
+}
+
+/*
+ * ACCESS TOKEN MANAGEMENT
+ */
+
+{
+    const accessToken = new URLSearchParams(window.location.search).get("access_token");
+    if (accessToken) {
+        localStorage.setItem("github_token", accessToken);
+        sessionStorage.setItem("github_token", accessToken);
+        const url = new URL(window.location.href);
+        url.searchParams.delete("access_token");
+        window.history.replaceState(null, "", String(url));
+    }
+}
+
+export function getAccessToken(): string | null {
+    return localStorage.getItem("github_token") || sessionStorage.getItem("github_token");
+}
+
+export function removeAcccessToken(): void {
+    localStorage.removeItem("github_token");
+    sessionStorage.removeItem("github_token");
 }
 
 export function extractMissingLanguages(body: string): Set<string> {

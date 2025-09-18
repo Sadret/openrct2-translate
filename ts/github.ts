@@ -1,17 +1,6 @@
-
-// retrieve access token on page load
-{
-    const accessToken = new URLSearchParams(window.location.search).get("access_token");
-    if (accessToken) {
-        localStorage.setItem("github_token", accessToken);
-        sessionStorage.setItem("github_token", accessToken);
-        const url = new URL(window.location.href);
-        url.searchParams.delete("access_token");
-        window.history.replaceState(null, "", String(url));
-    }
-}
-
-/* CLASSES AND TYPES */
+/*
+ * CLASSES AND TYPES
+ */
 
 type RateLimit = {
     limit: number;
@@ -21,6 +10,9 @@ type RateLimit = {
     used: number;
 }
 
+/**
+ * Error thrown for GitHub API rate limits or authentication issues.
+ */
 export class GitHubError extends Error {
     constructor(public authenticated: boolean, public rateLimit: RateLimit) {
         super(`GitHub Error [authenticated: ${authenticated}, ${Object.entries(rateLimit).map(([key, value]) => `${key}: ${value}`).join(", ")}]`);
@@ -28,12 +20,37 @@ export class GitHubError extends Error {
     }
 }
 
+/**
+ * Error thrown for HTTP errors.
+ */
 export class HTTPError extends Error {
     constructor(public status: number, public statusText: string, public headers: Headers) {
         super(`HTTP Error ${status}: ${statusText}`);
         this.name = "HTTPError";
     }
 }
+
+/**
+ * Describes a GitHub repository.
+ */
+export type RepoDesc = {
+    owner: string;
+    repository: string;
+};
+
+/**
+ * Describes a branch in a repository.
+ */
+export type BranchDesc = RepoDesc & {
+    branch: string;
+};
+
+/**
+ * Describes a file path in a branch of a repository.
+ */
+export type PathDesc = BranchDesc & {
+    path: string;
+};
 
 type GitHubUser = {
     login: string;
@@ -50,6 +67,7 @@ type GitHubIssue = {
 type GitHubRepository = {
     html_url: string;
     created_at: string;
+    default_branch: string;
 };
 
 type GitHubBranch = {
@@ -83,7 +101,9 @@ type GitHubPR = {
     html_url: string;
 };
 
-/* HELPER FUNCTIONS */
+/*
+ * HELPER FUNCTIONS
+ */
 
 function utf8ToBase64Safe(str: string): string {
     const utf8Bytes = new TextEncoder().encode(str);
@@ -98,144 +118,185 @@ function utf8ToBase64Safe(str: string): string {
     return btoa(binary);
 }
 
-/* FETCH WRAPPERS */
+export class GitHubClient {
+    constructor(private readonly accessToken?: string) { }
 
-async function fetchURL<T>(url: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(url, init);
-    if (!response.ok)
-        throw new HTTPError(response.status, response.statusText, response.headers);
-    return response.json() as T;
-}
+    /*
+     * FETCH WRAPPERS
+     */
 
-async function fetchAPI<T>(url: string, method = "GET", body?: BodyInit): Promise<T> {
-    const accessToken = localStorage.getItem("github_token") || sessionStorage.getItem("github_token");
-    try {
-        return await fetchURL("https://api.github.com/" + url, accessToken ? {
-            method,
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                Accept: "application/vnd.github.v3+json",
-            },
-            body,
-        } : undefined);
-    } catch (error) {
-        if (!(error instanceof HTTPError))
-            // propagate as unknown Error
-            throw error;
-        switch (true) {
-            case accessToken && error.status === 401:
-                // access token is invalid: remove and retry without
-                localStorage.removeItem("github_token");
-                sessionStorage.removeItem("github_token");
-                return await fetchAPI(url, method, body);
-            case error.status === 401:
-            case error.status === 403 && Number(error.headers.get("X-RateLimit-Remaining")) === 0:
-                // propagate as GitHubError
-                throw new GitHubError(Boolean(accessToken), {
-                    limit: Number(error.headers.get("X-RateLimit-Limit")),
-                    remaining: Number(error.headers.get("X-RateLimit-Remaining")),
-                    reset: Number(error.headers.get("X-RateLimit-Reset")),
-                    resource: String(error.headers.get("X-RateLimit-Resource")),
-                    used: Number(error.headers.get("X-RateLimit-Used")),
-                });
-            default:
-                // propagate as unknown HTTPError
-                throw error;
-        }
+    private async fetchURL<T>(url: string, init?: RequestInit): Promise<T> {
+        const response = await fetch(url, init);
+        if (!response.ok)
+            throw new HTTPError(response.status, response.statusText, response.headers);
+        return response.json() as T;
     }
-}
 
-/* GITHUB FUNCTIONS */
-
-export function login(force = false): void {
-    const clientId = "Ov23ct0fDobJn5hdYuQ1";
-    const redirectUri = "https://gh-oauth-handler.sadret.workers.dev/callback";
-    const scope = "public_repo";
-    const state = encodeURIComponent(window.location.href);
-
-    window.location.href =
-        `https://github.com/login/oauth/authorize` +
-        `?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&scope=${encodeURIComponent(scope)}` +
-        `&state=${state}` +
-        (force ? "&prompt=login" : "");
-}
-
-export async function getUserName(): Promise<string> {
-    return (await fetchAPI<GitHubUser>("user")).login;
-}
-
-export async function getIssue(issueId: string): Promise<GitHubIssue> {
-    return await fetchAPI(`repos/OpenRCT2/Localisation/issues/${issueId}`);
-}
-
-export async function* streamOpenIssues(): AsyncGenerator<GitHubIssue> {
-    for (let page = 1; true; page++) {
-        const issues = await fetchAPI<GitHubIssue[]>(`repos/OpenRCT2/Localisation/issues?state=open&per_page=100&page=${page}`);
-
-        if (issues.length === 0) return;
-
-        for (const issue of issues)
-            if (!issue.pull_request)
-                yield issue;
-    }
-}
-
-export async function getLanguages(): Promise<string[]> {
-    return (await fetchAPI<GitHubFile[]>("repos/OpenRCT2/Localisation/contents/data/language"))
-        .filter((file) => file.name.endsWith(".txt"))
-        .map((file) => file.name.replace(/\.txt$/, ""));
-}
-
-export async function getLanguageNames(): Promise<Map<string, string>> {
-    return new Map(
-        (await (
-            await fetch(`https://raw.githubusercontent.com/OpenRCT2/OpenRCT2/develop/src/openrct2/localisation/Language.cpp`)
-        ).text())
-            .matchAll(/(\w\w-\w\w)", "([^"]+)", *(u8)?"([^"]+)/g)
-            .map(([_, langId, langEnglish, _langNative]) => ([langId, langEnglish]))
-    );
-}
-
-export async function fork(username: string): Promise<GitHubRepository> {
-    await fetchAPI("repos/OpenRCT2/Localisation/forks", "POST");
-
-    // Wait until the fork is visible
-    for (let i = 0; i < 10; i++)
+    private async fetchAPI<T>(url: string, method = "GET", body?: BodyInit, authorised = true): Promise<T> {
         try {
-            return await fetchAPI(`repos/${username}/Localisation`);
-        } catch {
-            await new Promise(r => setTimeout(r, 10 << i));
+            return this.fetchURL("https://api.github.com/" + url, {
+                method,
+                headers: {
+                    Accept: "application/vnd.github.v3+json",
+                    "User-Agent": "https://github.com/Sadret/openrct2-translate",
+                    ...(body && { "Content-Type": "application/json" }),
+                    ...(authorised && this.accessToken && { Authorization: `Bearer ${this.accessToken}` }),
+                },
+                body,
+            });
+        } catch (error) {
+            if (!(error instanceof HTTPError))
+                // propagate as unknown Error
+                throw error;
+            switch (true) {
+                case this.accessToken && error.status === 401:
+                    // access token is invalid: retry without (most likely fails with 403)
+                    return await this.fetchAPI(url, method, body, false);
+                case error.status === 401:
+                case error.status === 403 && Number(error.headers.get("X-RateLimit-Remaining")) === 0:
+                    // propagate as GitHubError
+                    throw new GitHubError(Boolean(this.accessToken), {
+                        limit: Number(error.headers.get("X-RateLimit-Limit")),
+                        remaining: Number(error.headers.get("X-RateLimit-Remaining")),
+                        reset: Number(error.headers.get("X-RateLimit-Reset")),
+                        resource: String(error.headers.get("X-RateLimit-Resource")),
+                        used: Number(error.headers.get("X-RateLimit-Used")),
+                    });
+                default:
+                    // propagate as unknown HTTPError
+                    throw error;
+            }
         }
+    }
 
-    throw new Error(); // unknown error: cannot create or retrieve fork
-}
+    /*
+     * READER FUNCTIONS
+     */
 
-export async function branch(userName: string, branchName: string): Promise<GitHubBranch> {
-    const baseSHA = (await fetchAPI<GitHubRef>("repos/OpenRCT2/Localisation/git/ref/heads/master")).object.sha;
-    return await fetchAPI<GitHubBranch>(`repos/${userName}/Localisation/git/refs`, "POST", JSON.stringify({
-        ref: `refs/heads/${branchName}`,
-        sha: baseSHA,
-    }));
-}
+    /**
+     * Gets the login name of the authenticated user.
+     * @returns {Promise<string>} The user's login.
+     */
+    public async getUser(): Promise<string> {
+        return (await this.fetchAPI<GitHubUser>("user")).login;
+    }
 
-export async function commit(userName: string, branchName: string, language: string, content: string, message: string): Promise<GitHubCommit> {
-    const filePath = `repos/${userName}/Localisation/contents/data/language/${language}.txt`;
-    const sha = (await fetchAPI<GitHubFile>(`${filePath}?ref=${branchName}`)).sha;
-    return await fetchAPI<GitHubCommit>(filePath, "PUT", JSON.stringify({
-        content: utf8ToBase64Safe(content),
-        message,
-        branch: branchName,
-        sha,
-    }));
-}
+    /**
+     * Gets repository metadata.
+     * @param {RepoDesc} repoDesc - Repository.
+     */
+    public async getRepository({ owner, repository }: RepoDesc): Promise<GitHubRepository> {
+        return this.fetchAPI(`repos/${owner}/${repository}`);
+    }
 
-export async function createPR(userName: string, title: string, body: string, branchName: string, draft = false): Promise<GitHubPR> {
-    return await fetchAPI<GitHubPR>(`repos/${userName}/Localisation/pulls`, "POST", JSON.stringify({
-        title,
-        body,
-        head: `${userName}:${branchName}`,
-        base: "master",
-        draft,
-    }));
+    /**
+     * Asynchronously iterates over issues in a repository.
+     * @param {RepoDesc} repoDesc - Repository to fetch issues from.
+     * @param {"open"|"closed"|"all"} state - Issue state filter.
+     */
+    public async * getIssues({ owner, repository }: RepoDesc, state: "open" | "closed" | "all" = "open"): AsyncGenerator<GitHubIssue> {
+        for (let page = 1; true; page++) {
+            const issues = await this.fetchAPI<GitHubIssue[]>(`repos/${owner}/${repository}/issues?state=${state}&per_page=100&page=${page}`);
+            if (issues.length === 0) return;
+            for (const issue of issues) yield issue;
+        }
+    }
+
+    /**
+     * Gets a single issue by number.
+     * @param {RepoDesc} repoDesc - Repository.
+     * @param {string} issueId - Issue number.
+     */
+    public async getIssue({ owner, repository }: RepoDesc, issueId: string): Promise<GitHubIssue> {
+        return this.fetchAPI(`repos/${owner}/${repository}/issues/${issueId}`);
+    }
+
+    /**
+     * Gets a reference (ref) for a branch.
+     * @param {BranchDesc} branchDesc - Branch.
+     */
+    public async getRef({ owner, repository, branch }: BranchDesc): Promise<GitHubRef> {
+        return this.fetchAPI(`repos/${owner}/${repository}/git/refs/heads/${branch}`);
+    }
+
+    /**
+     * Gets a file from a repository branch.
+     * @param {PathDesc} pathDesc - File location.
+     */
+    public async getFile(pathDesc: PathDesc): Promise<GitHubFile> {
+        return this.getContent(pathDesc);
+    }
+
+    /**
+     * Gets a folder (list of files) from a repository branch.
+     * @param {PathDesc} pathDesc - Folder location.
+     */
+    public async getFolder(pathDesc: PathDesc): Promise<GitHubFile[]> {
+        return this.getContent(pathDesc);
+    }
+
+    private async getContent<T extends GitHubFile | GitHubFile[]>({ owner, repository, branch, path }: PathDesc): Promise<T> {
+        return this.fetchAPI<T>(`repos/${owner}/${repository}/contents/${path}?ref=${branch}`);
+    }
+
+    /*
+     * WRITER FUNCTIONS
+     */
+
+    /**
+     * Forks the given repository into the authenticated user's account.
+     * @param {RepoDesc} repoDesc - Repository to fork.
+     */
+    public async fork({ owner, repository }: RepoDesc): Promise<void> {
+        return this.fetchAPI(`repos/${owner}/${repository}/forks`, "POST");
+    }
+
+    /**
+     * Creates a new branch from the given commit SHA.
+     * If sha is not provided, it will be retrieved from the repository's default branch.
+     * @param {BranchDesc} branchDesc - Branch to create.
+     * @param {string} [sha] - Commit SHA to branch from (optional).
+     */
+    public async branch({ owner, repository, branch }: BranchDesc, sha?: string): Promise<GitHubBranch> {
+        return this.fetchAPI<GitHubBranch>(`repos/${owner}/${repository}/git/refs`, "POST", JSON.stringify({
+            ref: `refs/heads/${branch}`,
+            sha: sha || (await this.getRef({ owner, repository, branch: (await this.getRepository({ owner, repository })).default_branch })).object.sha,
+        }));
+    }
+
+    /**
+     * Commits changes to a file in the specified branch and path.
+     * If sha is not provided, it will be retrieved from the current file.
+     * @param {PathDesc} pathDesc - File location.
+     * @param {string} content - New file content.
+     * @param {string} message - Commit message.
+     * @param {string} [sha] - File's previous SHA (optional).
+     */
+    public async commit({ owner, repository, branch, path }: PathDesc, content: string, message: string, sha?: string): Promise<GitHubCommit> {
+        return this.fetchAPI<GitHubCommit>(`repos/${owner}/${repository}/contents/${path}`, "PUT", JSON.stringify({
+            branch,
+            content: utf8ToBase64Safe(content),
+            message,
+            sha: sha || (await this.getFile({ owner, repository, branch, path })).sha,
+        }));
+    }
+
+    /**
+     * Creates a pull request from the head branch to the base branch.
+     * Requires that head.repository is a fork of base.repository.
+     * @param {BranchDesc} head - Head branch to merge from.
+     * @param {BranchDesc} base - Base branch to merge into.
+     * @param {string} title - PR title.
+     * @param {string} body - PR body/description.
+     * @param {boolean} draft - Whether to create the PR as a draft.
+     */
+    public async createPR(head: BranchDesc, base: BranchDesc, title: string, body: string, draft: boolean = false): Promise<GitHubPR> {
+        return this.fetchAPI<GitHubPR>(`repos/${base.owner}/${base.repository}/pulls`, "POST", JSON.stringify({
+            title,
+            body,
+            head: `${head.owner}:${head.branch}`,
+            base: base.branch,
+            draft,
+        }));
+    }
 }
