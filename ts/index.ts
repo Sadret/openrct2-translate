@@ -18,8 +18,7 @@ async function init() {
 
     // FETCH LANGUAGES
     const fetchLanguages = Promise.all([getLanguages(), getLanguageNames()]).then(([languages, names]) => {
-        languages.filter(language => !names.has(language)).forEach(language => names.set(language, language));
-        names.entries().toArray().sort((a, b) => a[1].localeCompare(b[1])).forEach(([id, name]) => {
+        languages.map(id => [id, names.get(id) || id]).sort((a, b) => a[1].localeCompare(b[1])).forEach(([id, name]) => {
             sheet.insertRule(`body:has(option[value="${id}"]:checked) .issue.${id} {display: inherit}`, sheet.cssRules.length);
             $("#languages").append(
                 $("<option>")
