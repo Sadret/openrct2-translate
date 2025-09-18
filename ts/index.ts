@@ -1,6 +1,6 @@
 import $ from "jquery";
-import { extractMissingLanguages, extractTranslationStringsFromIssue } from "./gh-utils";
-import { getLanguageNames, getLanguages, streamOpenIssues } from "./github";
+import { BASE, extractMissingLanguagesFromIssue, extractTranslationStringsFromIssue, getAccessToken } from "./gh-utils";
+import { GitHubClient } from "./github";
 import { showOverlay } from "./overlay";
 
 $(async () => {
@@ -11,13 +11,37 @@ $(async () => {
     }
 });
 
+async function getLanguages(client: GitHubClient): Promise<string[]> {
+    return (await client.getFolder({
+        ...BASE,
+        path: "data/language"
+    })).filter(
+        file => file.name.endsWith(".txt")
+    ).map(
+        file => file.name.replace(/\.txt$/, "")
+    );
+}
+
+async function getLanguageNames(): Promise<Map<string, string>> {
+    return new Map(
+        (await (
+            await fetch(`https://raw.githubusercontent.com/OpenRCT2/OpenRCT2/develop/src/openrct2/localisation/Language.cpp`)
+        ).text())
+            .matchAll(/(\w\w-\w\w)", "([^"]+)", *(u8)?"([^"]+)/g)
+            .map(([_, langId, langEnglish, _langNative]) => ([langId, langEnglish]))
+    );
+}
+
 async function init() {
     // STYLESHEET SETUP
     const sheet = document.head.appendChild(document.createElement("style")).sheet as CSSStyleSheet;
     sheet.insertRule("body:not(:has(option[value=\"none\"]:checked)) .issue {display: none}", sheet.cssRules.length);
 
+    // GitHub SETUP
+    const client = new GitHubClient(getAccessToken() || undefined);
+
     // FETCH LANGUAGES
-    const fetchLanguages = Promise.all([getLanguages(), getLanguageNames()]).then(([languages, names]) => {
+    const fetchLanguages = Promise.all([getLanguages(client), getLanguageNames()]).then(([languages, names]) => {
         languages.map(id => [id, names.get(id) || id]).sort((a, b) => a[1].localeCompare(b[1])).forEach(([id, name]) => {
             sheet.insertRule(`body:has(option[value="${id}"]:checked) .issue.${id} {display: inherit}`, sheet.cssRules.length);
             $("#languages").append(
@@ -34,9 +58,9 @@ async function init() {
     // FETCH ISSUES
     const fetchIssues = (async () => {
         let buffer = Promise.resolve();
-        for await (const issue of streamOpenIssues())
+        for await (const issue of client.getIssues(BASE))
             buffer = buffer.then(() => {
-                const missingLanguages = extractMissingLanguages(issue.body);
+                const missingLanguages = extractMissingLanguagesFromIssue(issue.body);
                 $("<div>")
                     .addClass("issue")
                     .addClass(Array.from(missingLanguages).join(" "))

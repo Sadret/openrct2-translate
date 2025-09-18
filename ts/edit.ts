@@ -1,6 +1,6 @@
 import $ from "jquery";
-import { extractTranslationFromLanguageFile, extractTranslationStringsFromIssue, extractTranslationStringsFromLanguageFile, updateLanguageFile, type TranslationString } from './gh-utils';
-import { branch, commit, createPR, fork, getIssue, getUserName } from "./github";
+import { BASE, extractTranslationFromLanguageFile, extractTranslationStringsFromIssue, extractTranslationStringsFromLanguageFile, getAccessToken, updateLanguageFile, waitForSuccess, type TranslationString } from './gh-utils';
+import { GitHubClient } from "./github";
 import { showOverlay } from "./overlay";
 import { getTranslation, removeTranslation, setTranslation } from './storage';
 
@@ -22,9 +22,12 @@ async function init(language: string, issueId: string | null) {
     $("#language").text(language);
     const languageFilePromise = fetch(`https://raw.githubusercontent.com/OpenRCT2/Localisation/master/data/language/${language}.txt`).then(res => res.text());
 
+    // GitHub SETUP
+    const client = new GitHubClient(getAccessToken() || undefined);
+
     const strings: TranslationString[] = await (issueId ? async () => {
         $("h1").text(`#${issueId}`);
-        const issue = await getIssue(issueId);
+        const issue = await client.getIssue(BASE, issueId);
         if (!issue) return [];
         $("h1")
             .text(`#${issue.number}: ${issue.title}`)
@@ -78,7 +81,7 @@ async function init(language: string, issueId: string | null) {
     });
 
     const enum Actions { SAVE, COMMIT, DRAFT_PR, CREATE_PR };
-        
+
     async function trigger(actions: Actions) {
         const translations = $("#strings tbody tr.added").toArray().map<[string, string]>(row => {
             const strId = $(row).find(".strId").text();
@@ -92,29 +95,35 @@ async function init(language: string, issueId: string | null) {
 
         try {
             const now = new Date().toISOString();
-            const userName = await getUserName();
-            const branchName = "translate-" + language + "-" + now.replace(/[^\w]/g, "");
+            const userName = await client.getUser();
             const content = updateLanguageFile(languageFile, translations);
             const message = `${language}: Apply #${issueId}`;
 
-            const forkResult = await fork(userName);
+            const userInfo = {
+                owner: userName,
+                repository: BASE.repository,
+                branch: "translate-" + language + "-" + now.replace(/[^\w]/g, ""),
+                path: `data/language/${language}.txt`,
+            };
+
+            const forkResult = await waitForSuccess(() => client.getRepository(userInfo));
             if (now <= forkResult.created_at)
                 addToLog(`created a new fork for user ${userName}`, forkResult.html_url);
             else
                 addToLog(`fork already exists for user ${userName}`, forkResult.html_url);
 
-            const branchResult = await branch(userName, branchName);
-            addToLog(`created a new branch ${branchName}`, `https://github.com/${userName}/Localisation/tree/${branchName}`);
-            
-            const commitResult = await commit(userName, branchName, language, content, message);
+            const branchResult = await client.branch(userInfo);
+            addToLog(`created a new branch ${userInfo.branch}`, `https://github.com/${userInfo.owner}/Localisation/tree/${userInfo.branch}`);
+
+            const commitResult = await client.commit(userInfo, content, message);
             addToLog(`committed changes to ${language}.txt`, commitResult.commit.html_url);
 
-            if(actions === Actions.COMMIT) return;
+            if (actions === Actions.COMMIT) return;
 
             const title = message;
             const body = `Applying for issue:\n- #${issueId}`;
             const draft = actions === Actions.DRAFT_PR;
-            const prResult = await createPR(userName, title, body, branchName, draft);
+            const prResult = await client.createPR(userInfo, { ...BASE, owner: "Sadret" }, title, body, draft); // Sadret for testing
             addToLog(`${draft ? "drafted" : "created"} pull request against OpenRCT2/Localisation`, prResult.html_url);
         } catch (error) {
             showOverlay(error, false);
@@ -141,6 +150,6 @@ async function init(language: string, issueId: string | null) {
 
 function addToLog(message: string, url?: string) {
     const line = $("<div>").text(`${new Date().toLocaleString()} ${message}`);
-    if(url) line.append($("<a>").attr("href", url).attr("target", "_blank").append("(open on GitHub ↗", $("<img>").attr("src", "github-mark.png"), ")"));
+    if (url) line.append($("<a>").attr("href", url).attr("target", "_blank").append("(open on GitHub ↗", $("<img>").attr("src", "github-mark.png"), ")"));
     $("#log").append(line).scrollTop($("#log")[0].scrollHeight);
 }

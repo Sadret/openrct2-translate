@@ -16,6 +16,16 @@ export type TranslationString = {
 }
 
 /*
+ * REPOSITORY
+ */
+
+export const BASE = {
+    owner: "OpenRCT2",
+    repository: "Localisation",
+    branch: "master",
+};
+
+/*
  * ACCESS TOKEN MANAGEMENT
  */
 
@@ -34,12 +44,45 @@ export function getAccessToken(): string | null {
     return localStorage.getItem("github_token") || sessionStorage.getItem("github_token");
 }
 
-export function removeAcccessToken(): void {
+export function removeAccessToken(): void {
     localStorage.removeItem("github_token");
     sessionStorage.removeItem("github_token");
 }
 
-export function extractMissingLanguages(body: string): Set<string> {
+export function login(force = false): void {
+    const clientId = "Ov23ct0fDobJn5hdYuQ1";
+    const redirectUri = "https://gh-oauth-handler.sadret.workers.dev/callback";
+    const scope = "public_repo";
+    const state = encodeURIComponent(window.location.href);
+
+    window.location.href =
+        `https://github.com/login/oauth/authorize` +
+        `?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&scope=${encodeURIComponent(scope)}` +
+        `&state=${state}` +
+        (force ? "&prompt=login" : "");
+}
+
+/*
+ * UTILITY FUNCTIONS
+ */
+
+export async function waitForSuccess<T>(fn: () => Promise<T>): Promise<T> {
+    // waits for a maximum of ~10s, with exponential backoff
+    for (let i = 0; i < 10; i++)
+        try {
+            return await fn();
+        } catch {
+            await new Promise(r => setTimeout(r, 10 << i));
+        }
+    throw new Error();
+}
+
+/*
+ * ISSUE
+ */
+
+export function extractMissingLanguagesFromIssue(body: string): Set<string> {
     return new Set(body.matchAll(/- \[( |x)\] ([a-z]{2}-[A-Z]{2})/g).filter(
         match => match[1] !== "x"
     ).map(
@@ -47,9 +90,9 @@ export function extractMissingLanguages(body: string): Set<string> {
     ));
 }
 
-export function extractTranslationStringsFromIssue(issue: string): TranslationString[] {
+export function extractTranslationStringsFromIssue(body: string): TranslationString[] {
     const strings = new Map<string, TranslationString>();
-    issue.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
+    body.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
         const [_, sign, strId, desc] = match;
         if (!strings.has(strId))
             strings.set(strId, { strId });
@@ -61,6 +104,10 @@ export function extractTranslationStringsFromIssue(issue: string): TranslationSt
     });
     return strings.values().toArray().sort((a, b) => a.strId.localeCompare(b.strId));
 }
+
+/*
+ * LANGUAGE FILE
+ */
 
 export function extractTranslationStringsFromLanguageFile(languageFile: string): TranslationString[] {
     return languageFile.matchAll(/(STR_\d{4})\s*:(.+)/g).toArray().map(match => ({

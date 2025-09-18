@@ -10707,25 +10707,20 @@
 	var jqueryExports = requireJquery();
 	var $ = /*@__PURE__*/getDefaultExportFromCjs(jqueryExports);
 
-	function extractMissingLanguages(body) {
-	    return new Set(body.matchAll(/- \[( |x)\] ([a-z]{2}-[A-Z]{2})/g).filter(match => match[1] !== "x").map(match => match[2]));
-	}
-	function extractTranslationStringsFromIssue(issue) {
-	    const strings = new Map();
-	    issue.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
-	        const [_, sign, strId, desc] = match;
-	        if (!strings.has(strId))
-	            strings.set(strId, { strId });
-	        const entry = strings.get(strId);
-	        if (sign === "-")
-	            entry.descOld = desc;
-	        else
-	            entry.descNew = desc;
-	    });
-	    return strings.values().toArray().sort((a, b) => a.strId.localeCompare(b.strId));
-	}
-
-	// retrieve access token on page load
+	/*
+	 * TYPES
+	 */
+	/*
+	 * REPOSITORY
+	 */
+	const BASE = {
+	    owner: "OpenRCT2",
+	    repository: "Localisation",
+	    branch: "master",
+	};
+	/*
+	 * ACCESS TOKEN MANAGEMENT
+	 */
 	{
 	    const accessToken = new URLSearchParams(window.location.search).get("access_token");
 	    if (accessToken) {
@@ -10736,74 +10731,9 @@
 	        window.history.replaceState(null, "", String(url));
 	    }
 	}
-	class GitHubError extends Error {
-	    authenticated;
-	    rateLimit;
-	    constructor(authenticated, rateLimit) {
-	        super(`GitHub Error [authenticated: ${authenticated}, ${Object.entries(rateLimit).map(([key, value]) => `${key}: ${value}`).join(", ")}]`);
-	        this.authenticated = authenticated;
-	        this.rateLimit = rateLimit;
-	        this.name = "GitHubError";
-	    }
+	function getAccessToken() {
+	    return localStorage.getItem("github_token") || sessionStorage.getItem("github_token");
 	}
-	class HTTPError extends Error {
-	    status;
-	    statusText;
-	    headers;
-	    constructor(status, statusText, headers) {
-	        super(`HTTP Error ${status}: ${statusText}`);
-	        this.status = status;
-	        this.statusText = statusText;
-	        this.headers = headers;
-	        this.name = "HTTPError";
-	    }
-	}
-	/* FETCH WRAPPERS */
-	async function fetchURL(url, init) {
-	    const response = await fetch(url, init);
-	    if (!response.ok)
-	        throw new HTTPError(response.status, response.statusText, response.headers);
-	    return response.json();
-	}
-	async function fetchAPI(url, method = "GET", body) {
-	    const accessToken = localStorage.getItem("github_token") || sessionStorage.getItem("github_token");
-	    try {
-	        return await fetchURL("https://api.github.com/" + url, accessToken ? {
-	            method,
-	            headers: {
-	                Authorization: `Bearer ${accessToken}`,
-	                Accept: "application/vnd.github.v3+json",
-	            },
-	            body,
-	        } : undefined);
-	    }
-	    catch (error) {
-	        if (!(error instanceof HTTPError))
-	            // propagate as unknown Error
-	            throw error;
-	        switch (true) {
-	            case accessToken && error.status === 401:
-	                // access token is invalid: remove and retry without
-	                localStorage.removeItem("github_token");
-	                sessionStorage.removeItem("github_token");
-	                return await fetchAPI(url, method, body);
-	            case error.status === 401:
-	            case error.status === 403 && Number(error.headers.get("X-RateLimit-Remaining")) === 0:
-	                // propagate as GitHubError
-	                throw new GitHubError(Boolean(accessToken), {
-	                    limit: Number(error.headers.get("X-RateLimit-Limit")),
-	                    remaining: Number(error.headers.get("X-RateLimit-Remaining")),
-	                    reset: Number(error.headers.get("X-RateLimit-Reset")),
-	                    resource: String(error.headers.get("X-RateLimit-Resource")),
-	                    used: Number(error.headers.get("X-RateLimit-Used")),
-	                });
-	            default:
-	                // propagate as unknown HTTPError
-	                throw error;
-	        }
-	    }
-	}
-	/* GITHUB FUNCTIONS */
 	function login(force = false) {
 	    const clientId = "Ov23ct0fDobJn5hdYuQ1";
 	    const redirectUri = "https://gh-oauth-handler.sadret.workers.dev/callback";
@@ -10816,25 +10746,241 @@
 	            `&state=${state}` +
 	            (force ? "&prompt=login" : "");
 	}
-	async function* streamOpenIssues() {
-	    for (let page = 1; true; page++) {
-	        const issues = await fetchAPI(`repos/OpenRCT2/Localisation/issues?state=open&per_page=100&page=${page}`);
-	        if (issues.length === 0)
-	            return;
-	        for (const issue of issues)
-	            if (!issue.pull_request)
-	                yield issue;
+	/*
+	 * ISSUE
+	 */
+	function extractMissingLanguagesFromIssue(body) {
+	    return new Set(body.matchAll(/- \[( |x)\] ([a-z]{2}-[A-Z]{2})/g).filter(match => match[1] !== "x").map(match => match[2]));
+	}
+	function extractTranslationStringsFromIssue(body) {
+	    const strings = new Map();
+	    body.matchAll(/([+-]?)(STR_\d{4})\s*:(.+)/g).forEach(match => {
+	        const [_, sign, strId, desc] = match;
+	        if (!strings.has(strId))
+	            strings.set(strId, { strId });
+	        const entry = strings.get(strId);
+	        if (sign === "-")
+	            entry.descOld = desc;
+	        else
+	            entry.descNew = desc;
+	    });
+	    return strings.values().toArray().sort((a, b) => a.strId.localeCompare(b.strId));
+	}
+
+	/*
+	 * CLASSES AND TYPES
+	 */
+	/**
+	 * Error thrown for GitHub API rate limits or authentication issues.
+	 */
+	class GitHubError extends Error {
+	    authenticated;
+	    rateLimit;
+	    constructor(authenticated, rateLimit) {
+	        super(`GitHub Error [authenticated: ${authenticated}, ${Object.entries(rateLimit).map(([key, value]) => `${key}: ${value}`).join(", ")}]`);
+	        this.authenticated = authenticated;
+	        this.rateLimit = rateLimit;
+	        this.name = "GitHubError";
 	    }
 	}
-	async function getLanguages() {
-	    return (await fetchAPI("repos/OpenRCT2/Localisation/contents/data/language"))
-	        .filter((file) => file.name.endsWith(".txt"))
-	        .map((file) => file.name.replace(/\.txt$/, ""));
+	/**
+	 * Error thrown for HTTP errors.
+	 */
+	class HTTPError extends Error {
+	    status;
+	    statusText;
+	    headers;
+	    constructor(status, statusText, headers) {
+	        super(`HTTP Error ${status}: ${statusText}`);
+	        this.status = status;
+	        this.statusText = statusText;
+	        this.headers = headers;
+	        this.name = "HTTPError";
+	    }
 	}
-	async function getLanguageNames() {
-	    return new Map((await (await fetch(`https://raw.githubusercontent.com/OpenRCT2/OpenRCT2/develop/src/openrct2/localisation/Language.cpp`)).text())
-	        .matchAll(/(\w\w-\w\w)", "([^"]+)", *(u8)?"([^"]+)/g)
-	        .map(([_, langId, langEnglish, _langNative]) => ([langId, langEnglish])));
+	/*
+	 * HELPER FUNCTIONS
+	 */
+	function utf8ToBase64Safe(str) {
+	    const utf8Bytes = new TextEncoder().encode(str);
+	    let binary = "";
+	    const chunkSize = 0x8000; // 32K
+	    for (let i = 0; i < utf8Bytes.length; i += chunkSize) {
+	        const chunk = utf8Bytes.subarray(i, i + chunkSize);
+	        binary += String.fromCharCode(...chunk);
+	    }
+	    return btoa(binary);
+	}
+	class GitHubClient {
+	    accessToken;
+	    constructor(accessToken) {
+	        this.accessToken = accessToken;
+	    }
+	    /*
+	     * FETCH WRAPPERS
+	     */
+	    async fetchURL(url, init) {
+	        const response = await fetch(url, init);
+	        if (!response.ok)
+	            throw new HTTPError(response.status, response.statusText, response.headers);
+	        return response.json();
+	    }
+	    async fetchAPI(url, method = "GET", body, authorised = true) {
+	        try {
+	            return this.fetchURL("https://api.github.com/" + url, {
+	                method,
+	                headers: {
+	                    Accept: "application/vnd.github.v3+json",
+	                    "User-Agent": "https://github.com/Sadret/openrct2-translate",
+	                    ...(body && { "Content-Type": "application/json" }),
+	                    ...(authorised && this.accessToken && { Authorization: `Bearer ${this.accessToken}` }),
+	                },
+	                body,
+	            });
+	        }
+	        catch (error) {
+	            if (!(error instanceof HTTPError))
+	                // propagate as unknown Error
+	                throw error;
+	            switch (true) {
+	                case this.accessToken && error.status === 401:
+	                    // access token is invalid: retry without (most likely fails with 403)
+	                    return await this.fetchAPI(url, method, body, false);
+	                case error.status === 401:
+	                case error.status === 403 && Number(error.headers.get("X-RateLimit-Remaining")) === 0:
+	                    // propagate as GitHubError
+	                    throw new GitHubError(Boolean(this.accessToken), {
+	                        limit: Number(error.headers.get("X-RateLimit-Limit")),
+	                        remaining: Number(error.headers.get("X-RateLimit-Remaining")),
+	                        reset: Number(error.headers.get("X-RateLimit-Reset")),
+	                        resource: String(error.headers.get("X-RateLimit-Resource")),
+	                        used: Number(error.headers.get("X-RateLimit-Used")),
+	                    });
+	                default:
+	                    // propagate as unknown HTTPError
+	                    throw error;
+	            }
+	        }
+	    }
+	    /*
+	     * READER FUNCTIONS
+	     */
+	    /**
+	     * Gets the login name of the authenticated user.
+	     * @returns {Promise<string>} The user's login.
+	     */
+	    async getUser() {
+	        return (await this.fetchAPI("user")).login;
+	    }
+	    /**
+	     * Gets repository metadata.
+	     * @param {RepoDesc} repoDesc - Repository.
+	     */
+	    async getRepository({ owner, repository }) {
+	        return this.fetchAPI(`repos/${owner}/${repository}`);
+	    }
+	    /**
+	     * Asynchronously iterates over issues in a repository.
+	     * @param {RepoDesc} repoDesc - Repository to fetch issues from.
+	     * @param {"open"|"closed"|"all"} state - Issue state filter.
+	     */
+	    async *getIssues({ owner, repository }, state = "open") {
+	        for (let page = 1; true; page++) {
+	            const issues = await this.fetchAPI(`repos/${owner}/${repository}/issues?state=${state}&per_page=100&page=${page}`);
+	            if (issues.length === 0)
+	                return;
+	            for (const issue of issues)
+	                yield issue;
+	        }
+	    }
+	    /**
+	     * Gets a single issue by number.
+	     * @param {RepoDesc} repoDesc - Repository.
+	     * @param {string} issueId - Issue number.
+	     */
+	    async getIssue({ owner, repository }, issueId) {
+	        return this.fetchAPI(`repos/${owner}/${repository}/issues/${issueId}`);
+	    }
+	    /**
+	     * Gets a reference (ref) for a branch.
+	     * @param {BranchDesc} branchDesc - Branch.
+	     */
+	    async getRef({ owner, repository, branch }) {
+	        return this.fetchAPI(`repos/${owner}/${repository}/git/refs/heads/${branch}`);
+	    }
+	    /**
+	     * Gets a file from a repository branch.
+	     * @param {PathDesc} pathDesc - File location.
+	     */
+	    async getFile(pathDesc) {
+	        return this.getContent(pathDesc);
+	    }
+	    /**
+	     * Gets a folder (list of files) from a repository branch.
+	     * @param {PathDesc} pathDesc - Folder location.
+	     */
+	    async getFolder(pathDesc) {
+	        return this.getContent(pathDesc);
+	    }
+	    async getContent({ owner, repository, branch, path }) {
+	        return this.fetchAPI(`repos/${owner}/${repository}/contents/${path}?ref=${branch}`);
+	    }
+	    /*
+	     * WRITER FUNCTIONS
+	     */
+	    /**
+	     * Forks the given repository into the authenticated user's account.
+	     * @param {RepoDesc} repoDesc - Repository to fork.
+	     */
+	    async fork({ owner, repository }) {
+	        return this.fetchAPI(`repos/${owner}/${repository}/forks`, "POST");
+	    }
+	    /**
+	     * Creates a new branch from the given commit SHA.
+	     * If sha is not provided, it will be retrieved from the repository's default branch.
+	     * @param {BranchDesc} branchDesc - Branch to create.
+	     * @param {string} [sha] - Commit SHA to branch from (optional).
+	     */
+	    async branch({ owner, repository, branch }, sha) {
+	        return this.fetchAPI(`repos/${owner}/${repository}/git/refs`, "POST", JSON.stringify({
+	            ref: `refs/heads/${branch}`,
+	            sha: sha || (await this.getRef({ owner, repository, branch: (await this.getRepository({ owner, repository })).default_branch })).object.sha,
+	        }));
+	    }
+	    /**
+	     * Commits changes to a file in the specified branch and path.
+	     * If sha is not provided, it will be retrieved from the current file.
+	     * @param {PathDesc} pathDesc - File location.
+	     * @param {string} content - New file content.
+	     * @param {string} message - Commit message.
+	     * @param {string} [sha] - File's previous SHA (optional).
+	     */
+	    async commit({ owner, repository, branch, path }, content, message, sha) {
+	        return this.fetchAPI(`repos/${owner}/${repository}/contents/${path}`, "PUT", JSON.stringify({
+	            branch,
+	            content: utf8ToBase64Safe(content),
+	            message,
+	            sha: sha || (await this.getFile({ owner, repository, branch, path })).sha,
+	        }));
+	    }
+	    /**
+	     * Creates a pull request from the head branch to the base branch.
+	     * Requires that head.repository is a fork of base.repository.
+	     * @param {BranchDesc} head - Head branch to merge from.
+	     * @param {BranchDesc} base - Base branch to merge into.
+	     * @param {string} title - PR title.
+	     * @param {string} body - PR body/description.
+	     * @param {boolean} draft - Whether to create the PR as a draft.
+	     */
+	    async createPR(head, base, title, body, draft = false) {
+	        return this.fetchAPI(`repos/${base.owner}/${base.repository}/pulls`, "POST", JSON.stringify({
+	            title,
+	            body,
+	            head: `${head.owner}:${head.branch}`,
+	            base: base.branch,
+	            draft,
+	        }));
+	    }
 	}
 
 	function getDurationString(seconds) {
@@ -10893,7 +11039,7 @@
 	                content.append($("<ul>").append($("<li>").text(`You can log in with a ${error.authenticated ? "different" : ""} GitHub account to ${error.authenticated ? "reset" : "increase"} the limit.`), $("<li>").text(`You can wait for the rate limit to reset and ${"reload the page" }.`)));
 	                break;
 	            default:
-	                content.append($("<h2>").text(`Solutions`), $("<ul>").append($("<li>").text(`You can ${"" } reload the page and hope that the error resolves by itself.`)));
+	                content.append($("<ul>").append($("<li>").text(`You can ${"" } reload the page and hope that the error resolves by itself.`)));
 	                break;
 	        }
 	    }
@@ -10915,12 +11061,25 @@
 	        showOverlay(error);
 	    }
 	});
+	async function getLanguages(client) {
+	    return (await client.getFolder({
+	        ...BASE,
+	        path: "data/language"
+	    })).filter(file => file.name.endsWith(".txt")).map(file => file.name.replace(/\.txt$/, ""));
+	}
+	async function getLanguageNames() {
+	    return new Map((await (await fetch(`https://raw.githubusercontent.com/OpenRCT2/OpenRCT2/develop/src/openrct2/localisation/Language.cpp`)).text())
+	        .matchAll(/(\w\w-\w\w)", "([^"]+)", *(u8)?"([^"]+)/g)
+	        .map(([_, langId, langEnglish, _langNative]) => ([langId, langEnglish])));
+	}
 	async function init() {
 	    // STYLESHEET SETUP
 	    const sheet = document.head.appendChild(document.createElement("style")).sheet;
 	    sheet.insertRule("body:not(:has(option[value=\"none\"]:checked)) .issue {display: none}", sheet.cssRules.length);
+	    // GitHub SETUP
+	    const client = new GitHubClient(getAccessToken() || undefined);
 	    // FETCH LANGUAGES
-	    const fetchLanguages = Promise.all([getLanguages(), getLanguageNames()]).then(([languages, names]) => {
+	    const fetchLanguages = Promise.all([getLanguages(client), getLanguageNames()]).then(([languages, names]) => {
 	        languages.map(id => [id, names.get(id) || id]).sort((a, b) => a[1].localeCompare(b[1])).forEach(([id, name]) => {
 	            sheet.insertRule(`body:has(option[value="${id}"]:checked) .issue.${id} {display: inherit}`, sheet.cssRules.length);
 	            $("#languages").append($("<option>")
@@ -10934,9 +11093,9 @@
 	    // FETCH ISSUES
 	    const fetchIssues = (async () => {
 	        let buffer = Promise.resolve();
-	        for await (const issue of streamOpenIssues())
+	        for await (const issue of client.getIssues(BASE))
 	            buffer = buffer.then(() => {
-	                const missingLanguages = extractMissingLanguages(issue.body);
+	                const missingLanguages = extractMissingLanguagesFromIssue(issue.body);
 	                $("<div>")
 	                    .addClass("issue")
 	                    .addClass(Array.from(missingLanguages).join(" "))

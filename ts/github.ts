@@ -52,11 +52,11 @@ export type PathDesc = BranchDesc & {
     path: string;
 };
 
-type GitHubUser = {
+export type GitHubUser = {
     login: string;
 };
 
-type GitHubIssue = {
+export type GitHubIssue = {
     number: number;
     title: string;
     html_url: string;
@@ -64,17 +64,17 @@ type GitHubIssue = {
     pull_request?: unknown;
 };
 
-type GitHubRepository = {
+export type GitHubRepository = {
     html_url: string;
     created_at: string;
     default_branch: string;
 };
 
-type GitHubBranch = {
+export type GitHubBranch = {
     url: string;
 };
 
-type GitHubRef = {
+export type GitHubRef = {
     ref: string;
     node_id: string;
     url: string;
@@ -85,19 +85,19 @@ type GitHubRef = {
     };
 };
 
-type GitHubFile = {
+export type GitHubFile = {
     name: string;
     sha: string;
     content: string;
 };
 
-type GitHubCommit = {
+export type GitHubCommit = {
     commit: {
         html_url: string;
     };
 };
 
-type GitHubPR = {
+export type GitHubPR = {
     html_url: string;
 };
 

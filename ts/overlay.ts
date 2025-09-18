@@ -1,5 +1,6 @@
 import $ from "jquery";
-import { GitHubError, HTTPError, login } from "./github";
+import { login } from "./gh-utils";
+import { GitHubError, HTTPError } from "./github";
 
 function getDurationString(seconds: number): string {
     const minutes = Math.round(seconds / 60);
@@ -88,7 +89,6 @@ export function showOverlay(error: unknown, onPageLoad: boolean): void {
                 ); break;
             default:
                 content.append(
-                    $("<h2>").text(`Solutions`),
                     $("<ul>").append(
                         $("<li>").text(`You can ${onPageLoad ? "" : "retry the action or "} reload the page and hope that the error resolves by itself.`),
                     ),
